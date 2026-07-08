@@ -27,6 +27,7 @@ let package = Package(
     .package(url: "https://github.com/pointfreeco/swift-clocks", from: "1.0.0"),
     .package(url: "https://github.com/pointfreeco/swift-concurrency-extras", from: "1.1.0"),
     .package(url: "https://github.com/pointfreeco/swift-custom-dump", from: "1.3.2"),
+    .package(url: "https://github.com/mattt/Replay.git", from: "0.4.0"),
     .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", from: "1.17.0"),
     .package(url: "https://github.com/pointfreeco/xctest-dynamic-overlay", from: "1.2.2"),
     .package(url: "https://github.com/WeTransfer/Mocker", from: "3.0.0"),
@@ -62,10 +63,11 @@ let package = Package(
     .testTarget(
       name: "AuthTests",
       dependencies: [
+        .product(name: "ConcurrencyExtras", package: "swift-concurrency-extras"),
         .product(name: "CustomDump", package: "swift-custom-dump"),
         .product(name: "InlineSnapshotTesting", package: "swift-snapshot-testing"),
+        .product(name: "Replay", package: "Replay"),
         .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
-        .product(name: "XCTestDynamicOverlay", package: "xctest-dynamic-overlay"),
         "Auth",
         "Helpers",
         "TestHelpers",
@@ -230,7 +232,7 @@ let package = Package(
 // Test targets migrated to Swift Testing get full Swift 6 checking, same as
 // production targets. Everything else stays pinned to v5 until its migration
 // phase lands (see SDK-435).
-let swift6TestTargets: Set<String> = ["SupabaseTests", "HelpersTests"]
+let swift6TestTargets: Set<String> = ["SupabaseTests", "HelpersTests", "AuthTests"]
 
 for target in package.targets {
   // Test targets never opted into `ExistentialAny` below, so bumping swift-tools-version
