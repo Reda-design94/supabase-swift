@@ -7,10 +7,10 @@
 
 import ConcurrencyExtras
 import CustomDump
-import InlineSnapshotTesting
-import Mocker
+import Foundation
+import Replay
 import TestHelpers
-import XCTest
+import Testing
 
 @testable import Auth
 
@@ -18,45 +18,12 @@ import XCTest
   import FoundationNetworking
 #endif
 
-final class AuthAdminOAuthTests: XCTestCase {
+@Suite
+struct AuthAdminOAuthTests {
   let clientId = UUID(uuidString: "E621E1F8-C36C-495A-93FC-0C247A3E6E5F")!
-
-  var sut: AuthClient!
-  var storage: InMemoryLocalStorage!
-
-  #if !os(Windows) && !os(Linux) && !os(Android)
-    override func invokeTest() {
-      withMainSerialExecutor {
-        super.invokeTest()
-      }
-    }
-  #endif
-
-  override func setUp() {
-    super.setUp()
-    storage = InMemoryLocalStorage()
-  }
-
-  override func tearDown() {
-    super.tearDown()
-
-    Mocker.removeAll()
-
-    let completion = { [weak sut] in
-      XCTAssertNil(sut, "sut should not leak")
-    }
-
-    defer { completion() }
-
-    sut = nil
-    storage = nil
-  }
+  let storage = InMemoryLocalStorage()
 
   private func makeSUT() -> AuthClient {
-    let sessionConfiguration = URLSessionConfiguration.default
-    sessionConfiguration.protocolClasses = [MockingURLProtocol.self]
-    let session = URLSession(configuration: sessionConfiguration)
-
     let encoder = AuthClient.Configuration.jsonEncoder
     encoder.outputFormatting = [.sortedKeys]
 
@@ -69,108 +36,87 @@ final class AuthAdminOAuthTests: XCTestCase {
       localStorage: storage,
       logger: nil,
       encoder: encoder,
-      fetch: { request in
-        try await session.data(for: request)
-      }
+      fetch: { try await Replay.session.data(for: $0) }
     )
 
     return AuthClient(configuration: configuration)
   }
 
-  func testListOAuthClients() async throws {
-    let responseData = """
-      {
-        "clients": [
+  @Test(
+    .replay(
+      stubs: [
+        .get(
+          "http://localhost:54321/auth/v1/admin/oauth/clients", 200,
+          [
+            "x-total-count": "1",
+            "link": "<https://example.com?page=1>; rel=\"last\"",
+          ],
           {
-            "client_id": "\(clientId)",
-            "client_name": "Test Client",
-            "client_type": "confidential",
-            "token_endpoint_auth_method": "client_secret_post",
-            "registration_type": "manual",
-            "redirect_uris": ["https://example.com/callback"],
-            "grant_types": ["authorization_code", "refresh_token"],
-            "response_types": ["code"],
-            "created_at": "2024-01-01T00:00:00.000Z",
-            "updated_at": "2024-01-01T00:00:00.000Z"
+            """
+            {
+              "clients": [
+                {
+                  "client_id": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+                  "client_name": "Test Client",
+                  "client_type": "confidential",
+                  "token_endpoint_auth_method": "client_secret_post",
+                  "registration_type": "manual",
+                  "redirect_uris": ["https://example.com/callback"],
+                  "grant_types": ["authorization_code", "refresh_token"],
+                  "response_types": ["code"],
+                  "created_at": "2024-01-01T00:00:00.000Z",
+                  "updated_at": "2024-01-01T00:00:00.000Z"
+                }
+              ],
+              "aud": "authenticated"
+            }
+            """
           }
-        ],
-        "aud": "authenticated"
-      }
-      """.data(using: .utf8)!
-
-    Mock(
-      url: clientURL.appendingPathComponent("admin/oauth/clients"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: responseData],
-      additionalHeaders: [
-        "x-total-count": "1",
-        "link": "<https://example.com?page=1>; rel=\"last\"",
-      ]
+        )
+      ], matching: [.method, .path], scope: .test
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Authorization: Bearer supabase.secret.key" \
-      	--header "X-Client-Info: auth-swift/0.0.0" \
-      	--header "X-Supabase-Api-Version: 2024-01-01" \
-      	--header "apikey: supabase.publishable.key" \
-      	"http://localhost:54321/auth/v1/admin/oauth/clients?page=&per_page="
-      """#
-    }
-    .register()
-
-    sut = makeSUT()
+  )
+  func listOAuthClients() async throws {
+    let sut = makeSUT()
 
     let response = try await sut.admin.oauth.listClients()
 
-    XCTAssertEqual(response.clients.count, 1)
-    XCTAssertEqual(response.clients[0].clientId, clientId)
-    XCTAssertEqual(response.clients[0].clientName, "Test Client")
-    XCTAssertEqual(response.aud, "authenticated")
-    XCTAssertEqual(response.total, 1)
+    #expect(response.clients.count == 1)
+    #expect(response.clients[0].clientId == clientId)
+    #expect(response.clients[0].clientName == "Test Client")
+    #expect(response.aud == "authenticated")
+    #expect(response.total == 1)
   }
 
-  func testUpdateOAuthClient() async throws {
-    let responseData = """
-      {
-        "client_id": "\(clientId)",
-        "client_name": "Update Client name",
-        "client_secret": "secret123",
-        "client_type": "confidential",
-        "token_endpoint_auth_method": "client_secret_post",
-        "registration_type": "manual",
-        "redirect_uris": ["https://example.com/callback"],
-        "grant_types": ["authorization_code", "refresh_token"],
-        "response_types": ["code"],
-        "created_at": "2024-01-01T00:00:00.000Z",
-        "updated_at": "2024-01-01T00:00:00.000Z"
-      }
-      """.data(using: .utf8)!
-
-    Mock(
-      url: clientURL.appendingPathComponent("admin/oauth/clients/\(clientId)"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.put: responseData]
+  @Test(
+    .replay(
+      stubs: [
+        .put(
+          "http://localhost:54321/auth/v1/admin/oauth/clients/E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+          200, [:],
+          {
+            """
+            {
+              "client_id": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+              "client_name": "Update Client name",
+              "client_secret": "secret123",
+              "client_type": "confidential",
+              "token_endpoint_auth_method": "client_secret_post",
+              "registration_type": "manual",
+              "redirect_uris": ["https://example.com/callback"],
+              "grant_types": ["authorization_code", "refresh_token"],
+              "response_types": ["code"],
+              "created_at": "2024-01-01T00:00:00.000Z",
+              "updated_at": "2024-01-01T00:00:00.000Z"
+            }
+            """
+          }
+        )
+      ], matching: [.method, .path], scope: .test
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request PUT \
-      	--header "Authorization: Bearer supabase.secret.key" \
-      	--header "Content-Length: 141" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: auth-swift/0.0.0" \
-      	--header "X-Supabase-Api-Version: 2024-01-01" \
-      	--header "apikey: supabase.publishable.key" \
-      	--data "{\"client_name\":\"Update Client name\",\"grant_types\":[\"authorization_code\",\"refresh_token\"],\"redirect_uris\":[\"https:\/\/example.com\/callback\"]}" \
-      	"http://localhost:54321/auth/v1/admin/oauth/clients/E621E1F8-C36C-495A-93FC-0C247A3E6E5F"
-      """#
-    }
-    .register()
-
-    sut = makeSUT()
+  )
+  func updateOAuthClient() async throws {
+    let sut = makeSUT()
 
     let client = try await sut.admin.oauth.updateClient(
       clientId: clientId,
@@ -181,51 +127,39 @@ final class AuthAdminOAuthTests: XCTestCase {
       )
     )
 
-    XCTAssertEqual(client.clientId, clientId)
-    XCTAssertEqual(client.clientName, "Update Client name")
-    XCTAssertEqual(client.clientSecret, "secret123")
+    #expect(client.clientId == clientId)
+    #expect(client.clientName == "Update Client name")
+    #expect(client.clientSecret == "secret123")
   }
 
-  func testCreateOAuthClient() async throws {
-    let responseData = """
-      {
-        "client_id": "\(clientId)",
-        "client_name": "New Client",
-        "client_secret": "secret123",
-        "client_type": "confidential",
-        "token_endpoint_auth_method": "client_secret_post",
-        "registration_type": "manual",
-        "redirect_uris": ["https://example.com/callback"],
-        "grant_types": ["authorization_code", "refresh_token"],
-        "response_types": ["code"],
-        "created_at": "2024-01-01T00:00:00.000Z",
-        "updated_at": "2024-01-01T00:00:00.000Z"
-      }
-      """.data(using: .utf8)!
-
-    Mock(
-      url: clientURL.appendingPathComponent("admin/oauth/clients"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.post: responseData]
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/auth/v1/admin/oauth/clients", 200, [:],
+          {
+            """
+            {
+              "client_id": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+              "client_name": "New Client",
+              "client_secret": "secret123",
+              "client_type": "confidential",
+              "token_endpoint_auth_method": "client_secret_post",
+              "registration_type": "manual",
+              "redirect_uris": ["https://example.com/callback"],
+              "grant_types": ["authorization_code", "refresh_token"],
+              "response_types": ["code"],
+              "created_at": "2024-01-01T00:00:00.000Z",
+              "updated_at": "2024-01-01T00:00:00.000Z"
+            }
+            """
+          }
+        )
+      ], matching: [.method, .path], scope: .test
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Authorization: Bearer supabase.secret.key" \
-      	--header "Content-Length: 80" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: auth-swift/0.0.0" \
-      	--header "X-Supabase-Api-Version: 2024-01-01" \
-      	--header "apikey: supabase.publishable.key" \
-      	--data "{\"client_name\":\"New Client\",\"redirect_uris\":[\"https:\/\/example.com\/callback\"]}" \
-      	"http://localhost:54321/auth/v1/admin/oauth/clients"
-      """#
-    }
-    .register()
-
-    sut = makeSUT()
+  )
+  func createOAuthClient() async throws {
+    let sut = makeSUT()
 
     let params = CreateOAuthClientParams(
       clientName: "New Client",
@@ -234,133 +168,113 @@ final class AuthAdminOAuthTests: XCTestCase {
 
     let client = try await sut.admin.oauth.createClient(params: params)
 
-    XCTAssertEqual(client.clientId, clientId)
-    XCTAssertEqual(client.clientName, "New Client")
-    XCTAssertEqual(client.clientSecret, "secret123")
+    #expect(client.clientId == clientId)
+    #expect(client.clientName == "New Client")
+    #expect(client.clientSecret == "secret123")
   }
 
-  func testGetOAuthClient() async throws {
-    let responseData = """
-      {
-        "client_id": "\(clientId)",
-        "client_name": "Test Client",
-        "client_type": "confidential",
-        "token_endpoint_auth_method": "client_secret_post",
-        "registration_type": "manual",
-        "redirect_uris": ["https://example.com/callback"],
-        "grant_types": ["authorization_code", "refresh_token"],
-        "response_types": ["code"],
-        "created_at": "2024-01-01T00:00:00.000Z",
-        "updated_at": "2024-01-01T00:00:00.000Z"
-      }
-      """.data(using: .utf8)!
-
-    Mock(
-      url: clientURL.appendingPathComponent("admin/oauth/clients/\(clientId)"),
-      statusCode: 200,
-      data: [.get: responseData]
+  @Test(
+    .replay(
+      stubs: [
+        .get(
+          "http://localhost:54321/auth/v1/admin/oauth/clients/E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+          200, [:],
+          {
+            """
+            {
+              "client_id": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+              "client_name": "Test Client",
+              "client_type": "confidential",
+              "token_endpoint_auth_method": "client_secret_post",
+              "registration_type": "manual",
+              "redirect_uris": ["https://example.com/callback"],
+              "grant_types": ["authorization_code", "refresh_token"],
+              "response_types": ["code"],
+              "created_at": "2024-01-01T00:00:00.000Z",
+              "updated_at": "2024-01-01T00:00:00.000Z"
+            }
+            """
+          }
+        )
+      ], matching: [.method, .path], scope: .test
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Authorization: Bearer supabase.secret.key" \
-      	--header "X-Client-Info: auth-swift/0.0.0" \
-      	--header "X-Supabase-Api-Version: 2024-01-01" \
-      	--header "apikey: supabase.publishable.key" \
-      	"http://localhost:54321/auth/v1/admin/oauth/clients/E621E1F8-C36C-495A-93FC-0C247A3E6E5F"
-      """#
-    }
-    .register()
-
-    sut = makeSUT()
+  )
+  func getOAuthClient() async throws {
+    let sut = makeSUT()
 
     let client = try await sut.admin.oauth.getClient(clientId: clientId)
 
-    XCTAssertEqual(client.clientId, clientId)
-    XCTAssertEqual(client.clientName, "Test Client")
+    #expect(client.clientId == clientId)
+    #expect(client.clientName == "Test Client")
   }
 
-  func testDeleteOAuthClient() async throws {
-    let responseData = """
-      {
-        "client_id": "\(clientId)",
-        "client_name": "Test Client",
-        "client_type": "confidential",
-        "token_endpoint_auth_method": "client_secret_post",
-        "registration_type": "manual",
-        "redirect_uris": ["https://example.com/callback"],
-        "grant_types": ["authorization_code", "refresh_token"],
-        "response_types": ["code"],
-        "created_at": "2024-01-01T00:00:00.000Z",
-        "updated_at": "2024-01-01T00:00:00.000Z"
-      }
-      """.data(using: .utf8)!
-
-    Mock(
-      url: clientURL.appendingPathComponent("admin/oauth/clients/\(clientId)"),
-      statusCode: 200,
-      data: [.delete: responseData]
+  @Test(
+    .replay(
+      stubs: [
+        .delete(
+          "http://localhost:54321/auth/v1/admin/oauth/clients/E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+          200, [:],
+          {
+            """
+            {
+              "client_id": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+              "client_name": "Test Client",
+              "client_type": "confidential",
+              "token_endpoint_auth_method": "client_secret_post",
+              "registration_type": "manual",
+              "redirect_uris": ["https://example.com/callback"],
+              "grant_types": ["authorization_code", "refresh_token"],
+              "response_types": ["code"],
+              "created_at": "2024-01-01T00:00:00.000Z",
+              "updated_at": "2024-01-01T00:00:00.000Z"
+            }
+            """
+          }
+        )
+      ], matching: [.method, .path], scope: .test
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request DELETE \
-      	--header "Authorization: Bearer supabase.secret.key" \
-      	--header "X-Client-Info: auth-swift/0.0.0" \
-      	--header "X-Supabase-Api-Version: 2024-01-01" \
-      	--header "apikey: supabase.publishable.key" \
-      	"http://localhost:54321/auth/v1/admin/oauth/clients/E621E1F8-C36C-495A-93FC-0C247A3E6E5F"
-      """#
-    }
-    .register()
-
-    sut = makeSUT()
+  )
+  func deleteOAuthClient() async throws {
+    let sut = makeSUT()
 
     let client = try await sut.admin.oauth.deleteClient(clientId: clientId)
 
-    XCTAssertEqual(client.clientId, clientId)
+    #expect(client.clientId == clientId)
   }
 
-  func testRegenerateOAuthClientSecret() async throws {
-    let responseData = """
-      {
-        "client_id": "\(clientId)",
-        "client_name": "Test Client",
-        "client_secret": "new-secret456",
-        "client_type": "confidential",
-        "token_endpoint_auth_method": "client_secret_post",
-        "registration_type": "manual",
-        "redirect_uris": ["https://example.com/callback"],
-        "grant_types": ["authorization_code", "refresh_token"],
-        "response_types": ["code"],
-        "created_at": "2024-01-01T00:00:00.000Z",
-        "updated_at": "2024-01-01T00:00:00.000Z"
-      }
-      """.data(using: .utf8)!
-
-    Mock(
-      url: clientURL.appendingPathComponent("admin/oauth/clients/\(clientId)/regenerate_secret"),
-      statusCode: 200,
-      data: [.post: responseData]
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/auth/v1/admin/oauth/clients/E621E1F8-C36C-495A-93FC-0C247A3E6E5F/regenerate_secret",
+          200, [:],
+          {
+            """
+            {
+              "client_id": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+              "client_name": "Test Client",
+              "client_secret": "new-secret456",
+              "client_type": "confidential",
+              "token_endpoint_auth_method": "client_secret_post",
+              "registration_type": "manual",
+              "redirect_uris": ["https://example.com/callback"],
+              "grant_types": ["authorization_code", "refresh_token"],
+              "response_types": ["code"],
+              "created_at": "2024-01-01T00:00:00.000Z",
+              "updated_at": "2024-01-01T00:00:00.000Z"
+            }
+            """
+          }
+        )
+      ], matching: [.method, .path], scope: .test
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Authorization: Bearer supabase.secret.key" \
-      	--header "X-Client-Info: auth-swift/0.0.0" \
-      	--header "X-Supabase-Api-Version: 2024-01-01" \
-      	--header "apikey: supabase.publishable.key" \
-      	"http://localhost:54321/auth/v1/admin/oauth/clients/E621E1F8-C36C-495A-93FC-0C247A3E6E5F/regenerate_secret"
-      """#
-    }
-    .register()
-
-    sut = makeSUT()
+  )
+  func regenerateOAuthClientSecret() async throws {
+    let sut = makeSUT()
 
     let client = try await sut.admin.oauth.regenerateClientSecret(clientId: clientId)
 
-    XCTAssertEqual(client.clientId, clientId)
-    XCTAssertEqual(client.clientSecret, "new-secret456")
+    #expect(client.clientId == clientId)
+    #expect(client.clientSecret == "new-secret456")
   }
 }
