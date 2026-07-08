@@ -1,7 +1,7 @@
-import InlineSnapshotTesting
-import Mocker
-import TestHelpers
-import XCTest
+import ConcurrencyExtras
+import Foundation
+import Replay
+import Testing
 
 @testable import Storage
 
@@ -9,24 +9,19 @@ import XCTest
   import FoundationNetworking
 #endif
 
-final class StorageFileAPITests: XCTestCase {
+@Suite
+struct StorageFileAPITests {
   let url = URL(string: "http://localhost:54321/storage/v1")!
-  var storage: SupabaseStorageClient!
 
-  override func setUp() {
-    super.setUp()
-
+  init() {
     testingBoundary.setValue("alamofire.boundary.e56f43407f772505")
 
     JSONEncoder.defaultStorageEncoder.outputFormatting = [.sortedKeys]
     JSONEncoder.unconfiguredEncoder.outputFormatting = [.sortedKeys]
+  }
 
-    let configuration = URLSessionConfiguration.default
-    configuration.protocolClasses = [MockingURLProtocol.self]
-
-    let session = URLSession(configuration: configuration)
-
-    storage = SupabaseStorageClient(
+  private func makeSUT() -> SupabaseStorageClient {
+    SupabaseStorageClient(
       configuration: StorageClientConfiguration(
         url: url,
         headers: [
@@ -34,204 +29,160 @@ final class StorageFileAPITests: XCTestCase {
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
         ],
         session: StorageHTTPSession(
-          fetch: { try await session.data(for: $0) },
-          upload: { try await session.upload(for: $0, from: $1) }
+          fetch: { try await Replay.session.data(for: $0) },
+          upload: { try await Replay.session.upload(for: $0, from: $1) }
         ),
         logger: nil
       )
     )
   }
 
-  func testListFiles() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/list/bucket"),
-      statusCode: 200,
-      data: [
-        .post: Data(
-          """
-          [
-            {
-              "name": "test.txt",
-              "id": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
-              "updatedAt": "2024-01-01T00:00:00Z",
-              "createdAt": "2024-01-01T00:00:00Z",
-              "lastAccessedAt": "2024-01-01T00:00:00Z",
-              "metadata": {}
-            }
-          ]
-          """.utf8
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/list/bucket",
+          200,
+          ["Content-Type": "application/json"],
+          {
+            """
+            [
+              {
+                "name": "test.txt",
+                "id": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+                "updatedAt": "2024-01-01T00:00:00Z",
+                "createdAt": "2024-01-01T00:00:00Z",
+                "lastAccessedAt": "2024-01-01T00:00:00Z",
+                "metadata": {}
+              }
+            ]
+            """
+          }
         )
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 83" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"limit\":100,\"offset\":0,\"prefix\":\"folder\",\"sortBy\":{\"column\":\"name\",\"order\":\"asc\"}}" \
-      	"http://localhost:54321/storage/v1/object/list/bucket"
-      """#
-    }
-    .register()
-
+  )
+  func listFiles() async throws {
+    let storage = makeSUT()
     let result = try await storage.from("bucket").list(path: "folder")
-    XCTAssertEqual(result.count, 1)
-    XCTAssertEqual(result[0].name, "test.txt")
+    #expect(result.count == 1)
+    #expect(result[0].name == "test.txt")
   }
 
-  func testListFilesWithPartialSortByColumn() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/list/bucket"),
-      statusCode: 200,
-      data: [.post: Data("[]".utf8)]
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/list/bucket",
+          200,
+          ["Content-Type": "application/json"],
+          { "[]" }
+        )
+      ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 89" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"limit\":100,\"offset\":0,\"prefix\":\"folder\",\"sortBy\":{\"column\":\"updated_at\",\"order\":\"asc\"}}" \
-      	"http://localhost:54321/storage/v1/object/list/bucket"
-      """#
-    }
-    .register()
-
+  )
+  func listFilesWithPartialSortByColumn() async throws {
+    let storage = makeSUT()
     _ = try await storage.from("bucket").list(
       path: "folder",
       options: SearchOptions(sortBy: SortBy(column: "updated_at"))
     )
   }
 
-  func testListFilesWithPartialSortByOrder() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/list/bucket"),
-      statusCode: 200,
-      data: [.post: Data("[]".utf8)]
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/list/bucket",
+          200,
+          ["Content-Type": "application/json"],
+          { "[]" }
+        )
+      ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 84" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"limit\":100,\"offset\":0,\"prefix\":\"folder\",\"sortBy\":{\"column\":\"name\",\"order\":\"desc\"}}" \
-      	"http://localhost:54321/storage/v1/object/list/bucket"
-      """#
-    }
-    .register()
-
+  )
+  func listFilesWithPartialSortByOrder() async throws {
+    let storage = makeSUT()
     _ = try await storage.from("bucket").list(
       path: "folder",
       options: SearchOptions(sortBy: SortBy(order: .descending))
     )
   }
 
-  func testListFilesWithFullSortByOverride() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/list/bucket"),
-      statusCode: 200,
-      data: [.post: Data("[]".utf8)]
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/list/bucket",
+          200,
+          ["Content-Type": "application/json"],
+          { "[]" }
+        )
+      ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 90" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"limit\":100,\"offset\":0,\"prefix\":\"folder\",\"sortBy\":{\"column\":\"updated_at\",\"order\":\"desc\"}}" \
-      	"http://localhost:54321/storage/v1/object/list/bucket"
-      """#
-    }
-    .register()
-
+  )
+  func listFilesWithFullSortByOverride() async throws {
+    let storage = makeSUT()
     _ = try await storage.from("bucket").list(
       path: "folder",
       options: SearchOptions(sortBy: SortBy(column: "updated_at", order: .descending))
     )
   }
 
-  func testListFilesPreservesDefaultLimitWhenOnlyOffsetProvided() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/list/bucket"),
-      statusCode: 200,
-      data: [.post: Data("[]".utf8)]
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/list/bucket",
+          200,
+          ["Content-Type": "application/json"],
+          { "[]" }
+        )
+      ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 84" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"limit\":100,\"offset\":10,\"prefix\":\"folder\",\"sortBy\":{\"column\":\"name\",\"order\":\"asc\"}}" \
-      	"http://localhost:54321/storage/v1/object/list/bucket"
-      """#
-    }
-    .register()
-
+  )
+  func listFilesPreservesDefaultLimitWhenOnlyOffsetProvided() async throws {
+    let storage = makeSUT()
     _ = try await storage.from("bucket").list(
       path: "folder",
       options: SearchOptions(offset: 10, sortBy: SortBy(column: "name", order: .ascending))
     )
   }
 
-  func testListFilesPreservesDefaultOffsetWhenOnlyLimitProvided() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/list/bucket"),
-      statusCode: 200,
-      data: [.post: Data("[]".utf8)]
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/list/bucket",
+          200,
+          ["Content-Type": "application/json"],
+          { "[]" }
+        )
+      ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 82" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"limit\":50,\"offset\":0,\"prefix\":\"folder\",\"sortBy\":{\"column\":\"name\",\"order\":\"asc\"}}" \
-      	"http://localhost:54321/storage/v1/object/list/bucket"
-      """#
-    }
-    .register()
-
+  )
+  func listFilesPreservesDefaultOffsetWhenOnlyLimitProvided() async throws {
+    let storage = makeSUT()
     _ = try await storage.from("bucket").list(
       path: "folder",
       options: SearchOptions(limit: 50, sortBy: SortBy(column: "name", order: .ascending))
     )
   }
 
-  func testListFilesWithExplicitZeroLimitIsNotTreatedAsMissing() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/list/bucket"),
-      statusCode: 200,
-      data: [.post: Data("[]".utf8)]
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/list/bucket",
+          200,
+          ["Content-Type": "application/json"],
+          { "[]" }
+        )
+      ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 81" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"limit\":0,\"offset\":5,\"prefix\":\"folder\",\"sortBy\":{\"column\":\"name\",\"order\":\"asc\"}}" \
-      	"http://localhost:54321/storage/v1/object/list/bucket"
-      """#
-    }
-    .register()
-
+  )
+  func listFilesWithExplicitZeroLimitIsNotTreatedAsMissing() async throws {
+    let storage = makeSUT()
     _ = try await storage.from("bucket").list(
       path: "folder",
       options: SearchOptions(
@@ -239,460 +190,402 @@ final class StorageFileAPITests: XCTestCase {
     )
   }
 
-  func testMove() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/move"),
-      statusCode: 200,
-      data: [
-        .post: Data()
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/move",
+          200,
+          [:],
+          { "" }
+        )
+      ],
+      matching: [
+        .method, .path,
+        .custom { request, _ in
+          jsonBody(of: request) == [
+            "bucketId": "bucket",
+            "sourceKey": "old/path.txt",
+            "destinationKey": "new/path.txt",
+            "destinationBucket": nil,
+          ]
+        },
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 107" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"bucketId\":\"bucket\",\"destinationBucket\":null,\"destinationKey\":\"new\/path.txt\",\"sourceKey\":\"old\/path.txt\"}" \
-      	"http://localhost:54321/storage/v1/object/move"
-      """#
-    }
-    .register()
-
+  )
+  func move() async throws {
+    let storage = makeSUT()
     try await storage.from("bucket").move(
       from: "old/path.txt",
       to: "new/path.txt"
     )
   }
 
-  func testCopy() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/copy"),
-      statusCode: 200,
-      data: [
-        .post: Data(
-          """
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/copy",
+          200,
+          ["Content-Type": "application/json"],
           {
-            "Key": "object/dest/file.txt"
+            """
+            {
+              "Key": "object/dest/file.txt"
+            }
+            """
           }
-          """.utf8
         )
+      ],
+      matching: [
+        .method, .path,
+        .custom { request, _ in
+          jsonBody(of: request) == [
+            "bucketId": "bucket",
+            "sourceKey": "source/file.txt",
+            "destinationKey": "dest/file.txt",
+            "destinationBucket": nil,
+          ]
+        },
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 111" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"bucketId\":\"bucket\",\"destinationBucket\":null,\"destinationKey\":\"dest\/file.txt\",\"sourceKey\":\"source\/file.txt\"}" \
-      	"http://localhost:54321/storage/v1/object/copy"
-      """#
-    }
-    .register()
-
+  )
+  func copy() async throws {
+    let storage = makeSUT()
     let key = try await storage.from("bucket").copy(
       from: "source/file.txt",
       to: "dest/file.txt"
     )
 
-    XCTAssertEqual(key, "object/dest/file.txt")
+    #expect(key == "object/dest/file.txt")
   }
 
-  func testCreateSignedURL() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/sign/bucket/file.txt"),
-      statusCode: 200,
-      data: [
-        .post: Data(
-          """
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/sign/bucket/file.txt",
+          200,
+          ["Content-Type": "application/json"],
           {
-            "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+            """
+            {
+              "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+            }
+            """
           }
-          """.utf8
         )
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 18" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"expiresIn\":3600}" \
-      	"http://localhost:54321/storage/v1/object/sign/bucket/file.txt"
-      """#
-    }
-    .register()
-
+  )
+  func createSignedURL() async throws {
+    let storage = makeSUT()
     let url = try await storage.from("bucket").createSignedURL(
       path: "file.txt",
       expiresIn: 3600
     )
-    XCTAssertEqual(
-      url.absoluteString, "\(self.url)/object/upload/sign/bucket/file.txt?token=abc.def.ghi")
+    #expect(
+      url.absoluteString == "\(self.url)/object/upload/sign/bucket/file.txt?token=abc.def.ghi")
   }
 
-  func testCreateSignedURL_download() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/sign/bucket/file.txt"),
-      statusCode: 200,
-      data: [
-        .post: Data(
-          """
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/sign/bucket/file.txt",
+          200,
+          ["Content-Type": "application/json"],
           {
-            "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+            """
+            {
+              "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+            }
+            """
           }
-          """.utf8
         )
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 18" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"expiresIn\":3600}" \
-      	"http://localhost:54321/storage/v1/object/sign/bucket/file.txt"
-      """#
-    }
-    .register()
-
+  )
+  func createSignedURL_download() async throws {
+    let storage = makeSUT()
     let url = try await storage.from("bucket").createSignedURL(
       path: "file.txt",
       expiresIn: 3600,
       download: true
     )
-    XCTAssertEqual(
-      url.absoluteString,
-      "\(self.url)/object/upload/sign/bucket/file.txt?token=abc.def.ghi&download=")
+    #expect(
+      url.absoluteString
+        == "\(self.url)/object/upload/sign/bucket/file.txt?token=abc.def.ghi&download=")
   }
 
-  func testCreateSignedURLs() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/sign/bucket"),
-      statusCode: 200,
-      data: [
-        .post: Data(
-          """
-          [
-            {
-              "path": "file.txt",
-              "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
-            },
-            {
-              "path": "file2.txt",
-              "signedURL": "object/upload/sign/bucket/file2.txt?token=abc.def.ghi"
-            }
-          ]
-          """.utf8
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/sign/bucket",
+          200,
+          ["Content-Type": "application/json"],
+          {
+            """
+            [
+              {
+                "path": "file.txt",
+                "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+              },
+              {
+                "path": "file2.txt",
+                "signedURL": "object/upload/sign/bucket/file2.txt?token=abc.def.ghi"
+              }
+            ]
+            """
+          }
         )
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 51" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"expiresIn\":3600,\"paths\":[\"file.txt\",\"file2.txt\"]}" \
-      	"http://localhost:54321/storage/v1/object/sign/bucket"
-      """#
-    }
-    .register()
-
+  )
+  func createSignedURLs() async throws {
+    let storage = makeSUT()
     let paths = ["file.txt", "file2.txt"]
     let results: [SignedURLResult] = try await storage.from("bucket").createSignedURLs(
       paths: paths,
       expiresIn: 3600
     )
-    XCTAssertEqual(results.count, 2)
+    #expect(results.count == 2)
     guard case .success(let path0, let url0) = results[0] else {
-      return XCTFail("Expected success for file.txt")
+      Issue.record("Expected success for file.txt")
+      return
     }
-    XCTAssertEqual(path0, "file.txt")
-    XCTAssertEqual(
-      url0.absoluteString,
-      "\(self.url)/object/upload/sign/bucket/file.txt?token=abc.def.ghi")
+    #expect(path0 == "file.txt")
+    #expect(
+      url0.absoluteString == "\(self.url)/object/upload/sign/bucket/file.txt?token=abc.def.ghi")
     guard case .success(let path1, let url1) = results[1] else {
-      return XCTFail("Expected success for file2.txt")
+      Issue.record("Expected success for file2.txt")
+      return
     }
-    XCTAssertEqual(path1, "file2.txt")
-    XCTAssertEqual(
-      url1.absoluteString,
-      "\(self.url)/object/upload/sign/bucket/file2.txt?token=abc.def.ghi")
+    #expect(path1 == "file2.txt")
+    #expect(
+      url1.absoluteString == "\(self.url)/object/upload/sign/bucket/file2.txt?token=abc.def.ghi")
   }
 
-  func testCreateSignedURLs_download() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/sign/bucket"),
-      statusCode: 200,
-      data: [
-        .post: Data(
-          """
-          [
-            {
-              "path": "file.txt",
-              "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
-            },
-            {
-              "path": "file2.txt",
-              "signedURL": "object/upload/sign/bucket/file2.txt?token=abc.def.ghi"
-            }
-          ]
-          """.utf8
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/sign/bucket",
+          200,
+          ["Content-Type": "application/json"],
+          {
+            """
+            [
+              {
+                "path": "file.txt",
+                "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+              },
+              {
+                "path": "file2.txt",
+                "signedURL": "object/upload/sign/bucket/file2.txt?token=abc.def.ghi"
+              }
+            ]
+            """
+          }
         )
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 51" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"expiresIn\":3600,\"paths\":[\"file.txt\",\"file2.txt\"]}" \
-      	"http://localhost:54321/storage/v1/object/sign/bucket"
-      """#
-    }
-    .register()
-
+  )
+  func createSignedURLs_download() async throws {
+    let storage = makeSUT()
     let paths = ["file.txt", "file2.txt"]
     let results: [SignedURLResult] = try await storage.from("bucket").createSignedURLs(
       paths: paths,
       expiresIn: 3600,
       download: true
     )
-    XCTAssertEqual(results.count, 2)
+    #expect(results.count == 2)
     guard case .success(_, let url0) = results[0] else {
-      return XCTFail("Expected success for file.txt")
+      Issue.record("Expected success for file.txt")
+      return
     }
-    XCTAssertEqual(
-      url0.absoluteString,
-      "\(self.url)/object/upload/sign/bucket/file.txt?token=abc.def.ghi&download=")
+    #expect(
+      url0.absoluteString
+        == "\(self.url)/object/upload/sign/bucket/file.txt?token=abc.def.ghi&download=")
     guard case .success(_, let url1) = results[1] else {
-      return XCTFail("Expected success for file2.txt")
+      Issue.record("Expected success for file2.txt")
+      return
     }
-    XCTAssertEqual(
-      url1.absoluteString,
-      "\(self.url)/object/upload/sign/bucket/file2.txt?token=abc.def.ghi&download=")
+    #expect(
+      url1.absoluteString
+        == "\(self.url)/object/upload/sign/bucket/file2.txt?token=abc.def.ghi&download=")
   }
 
-  func testCreateSignedURLs_withNullSignedURL() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/sign/bucket"),
-      statusCode: 200,
-      data: [
-        .post: Data(
-          """
-          [
-            {
-              "path": "file.txt",
-              "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
-            },
-            {
-              "path": "missing.txt",
-              "signedURL": null,
-              "error": "Either the object does not exist or you do not have access to it"
-            }
-          ]
-          """.utf8
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/sign/bucket",
+          200,
+          ["Content-Type": "application/json"],
+          {
+            """
+            [
+              {
+                "path": "file.txt",
+                "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+              },
+              {
+                "path": "missing.txt",
+                "signedURL": null,
+                "error": "Either the object does not exist or you do not have access to it"
+              }
+            ]
+            """
+          }
         )
       ]
     )
-    .register()
-
+  )
+  func createSignedURLs_withNullSignedURL() async throws {
+    let storage = makeSUT()
     let results: [SignedURLResult] = try await storage.from("bucket").createSignedURLs(
       paths: ["file.txt", "missing.txt"],
       expiresIn: 3600
     )
-    XCTAssertEqual(results.count, 2)
+    #expect(results.count == 2)
     guard case .success(let path0, _) = results[0] else {
-      return XCTFail("Expected success for file.txt")
+      Issue.record("Expected success for file.txt")
+      return
     }
-    XCTAssertEqual(path0, "file.txt")
+    #expect(path0 == "file.txt")
     guard case .failure(let path1, let error1) = results[1] else {
-      return XCTFail("Expected failure for missing.txt")
+      Issue.record("Expected failure for missing.txt")
+      return
     }
-    XCTAssertEqual(path1, "missing.txt")
-    XCTAssertEqual(error1, "Either the object does not exist or you do not have access to it")
+    #expect(path1 == "missing.txt")
+    #expect(error1 == "Either the object does not exist or you do not have access to it")
   }
 
-  func testRemove() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/bucket"),
-      statusCode: 204,
-      data: [
-        .delete: Data(
-          """
-          [
-            {
-              "name": "file1.txt",
-              "id": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
-              "updatedAt": "2024-01-01T00:00:00Z",
-              "createdAt": "2024-01-01T00:00:00Z",
-              "lastAccessedAt": "2024-01-01T00:00:00Z",
-              "metadata": {}
-            },
-            {
-              "name": "file2.txt",
-              "id": "E621E1F8-C36C-495A-93FC-0C247A3E6E00",
-              "updatedAt": "2024-01-01T00:00:00Z",
-              "createdAt": "2024-01-01T00:00:00Z",
-              "lastAccessedAt": "2024-01-01T00:00:00Z",
-              "metadata": {}
-            }
-          ]
-          """.utf8)
+  @Test(
+    .replay(
+      stubs: [
+        .delete(
+          "http://localhost:54321/storage/v1/object/bucket",
+          204,
+          ["Content-Type": "application/json"],
+          {
+            """
+            [
+              {
+                "name": "file1.txt",
+                "id": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+                "updatedAt": "2024-01-01T00:00:00Z",
+                "createdAt": "2024-01-01T00:00:00Z",
+                "lastAccessedAt": "2024-01-01T00:00:00Z",
+                "metadata": {}
+              },
+              {
+                "name": "file2.txt",
+                "id": "E621E1F8-C36C-495A-93FC-0C247A3E6E00",
+                "updatedAt": "2024-01-01T00:00:00Z",
+                "createdAt": "2024-01-01T00:00:00Z",
+                "lastAccessedAt": "2024-01-01T00:00:00Z",
+                "metadata": {}
+              }
+            ]
+            """
+          }
+        )
+      ],
+      matching: [
+        .method, .path,
+        .custom { request, _ in
+          jsonBody(of: request) == ["prefixes": ["file1.txt", "file2.txt"]]
+        },
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request DELETE \
-      	--header "Content-Length: 38" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"prefixes\":[\"file1.txt\",\"file2.txt\"]}" \
-      	"http://localhost:54321/storage/v1/object/bucket"
-      """#
-    }
-    .register()
-
+  )
+  func remove() async throws {
+    let storage = makeSUT()
     let objects = try await storage.from("bucket").remove(
       paths: ["file1.txt", "file2.txt"]
     )
 
-    XCTAssertEqual(objects[0].name, "file1.txt")
-    XCTAssertEqual(objects[1].name, "file2.txt")
+    #expect(objects[0].name == "file1.txt")
+    #expect(objects[1].name == "file2.txt")
   }
 
-  func testNonSuccessStatusCode() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/move"),
-      statusCode: 400,
-      data: [
-        .post: Data(
-          """
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/move",
+          400,
+          ["Content-Type": "application/json"],
           {
-            "message":"Error"
+            """
+            {
+              "message":"Error"
+            }
+            """
           }
-          """.utf8
         )
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 98" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"bucketId\":\"bucket\",\"destinationBucket\":null,\"destinationKey\":\"destination\",\"sourceKey\":\"source\"}" \
-      	"http://localhost:54321/storage/v1/object/move"
-      """#
-    }
-    .register()
-
+  )
+  func nonSuccessStatusCode() async throws {
+    let storage = makeSUT()
     do {
       try await storage.from("bucket")
         .move(from: "source", to: "destination")
-      XCTFail()
+      Issue.record("Expected move to throw")
     } catch let error as StorageError {
-      XCTAssertEqual(error.message, "Error")
+      #expect(error.message == "Error")
     }
   }
 
-  func testNonSuccessStatusCodeWithNonJSONResponse() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/move"),
-      statusCode: 412,
-      data: [
-        .post: Data("error".utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Content-Length: 98" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"bucketId\":\"bucket\",\"destinationBucket\":null,\"destinationKey\":\"destination\",\"sourceKey\":\"source\"}" \
-      	"http://localhost:54321/storage/v1/object/move"
-      """#
-    }
-    .register()
-
-    do {
-      try await storage.from("bucket")
-        .move(from: "source", to: "destination")
-      XCTFail()
-    } catch let error as HTTPError {
-      XCTAssertEqual(error.data, Data("error".utf8))
-      XCTAssertEqual(error.response.statusCode, 412)
-    }
-  }
-
-  func testUpdateFromData() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/bucket/file.txt"),
-      statusCode: 200,
-      data: [
-        .put: Data(
-          """
-          {
-            "Id": "123",
-            "Key": "bucket/file.txt"
-          }
-          """.utf8
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/move",
+          412,
+          [:],
+          { "error" }
         )
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request PUT \
-      	--header "Cache-Control: max-age=3600" \
-      	--header "Content-Length: 390" \
-      	--header "Content-Type: multipart/form-data; boundary=alamofire.boundary.e56f43407f772505" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "--alamofire.boundary.e56f43407f772505\#r
-      Content-Disposition: form-data; name=\"cacheControl\"\#r
-      \#r
-      3600\#r
-      --alamofire.boundary.e56f43407f772505\#r
-      Content-Disposition: form-data; name=\"metadata\"\#r
-      \#r
-      {\"mode\":\"test\"}\#r
-      --alamofire.boundary.e56f43407f772505\#r
-      Content-Disposition: form-data; name=\"\"; filename=\"file.txt\"\#r
-      Content-Type: text/plain\#r
-      \#r
-      hello world\#r
-      --alamofire.boundary.e56f43407f772505--\#r
-      " \
-      	"http://localhost:54321/storage/v1/object/bucket/file.txt"
-      """#
+  )
+  func nonSuccessStatusCodeWithNonJSONResponse() async throws {
+    let storage = makeSUT()
+    do {
+      try await storage.from("bucket")
+        .move(from: "source", to: "destination")
+      Issue.record("Expected move to throw")
+    } catch let error as HTTPError {
+      #expect(error.data == Data("error".utf8))
+      #expect(error.response.statusCode == 412)
     }
-    .register()
+  }
 
+  @Test(
+    .replay(
+      stubs: [
+        .put(
+          "http://localhost:54321/storage/v1/object/bucket/file.txt",
+          200,
+          ["Content-Type": "application/json"],
+          {
+            """
+            {
+              "Id": "123",
+              "Key": "bucket/file.txt"
+            }
+            """
+          }
+        )
+      ]
+    )
+  )
+  func updateFromData() async throws {
+    let storage = makeSUT()
     let response = try await storage.from("bucket")
       .update(
         "file.txt",
@@ -704,56 +597,32 @@ final class StorageFileAPITests: XCTestCase {
         )
       )
 
-    XCTAssertEqual(response.id, "123")
-    XCTAssertEqual(response.path, "file.txt")
-    XCTAssertEqual(response.fullPath, "bucket/file.txt")
+    #expect(response.id == "123")
+    #expect(response.path == "file.txt")
+    #expect(response.fullPath == "bucket/file.txt")
   }
 
-  func testUpdateFromURL() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/bucket/file.txt"),
-      statusCode: 200,
-      data: [
-        .put: Data(
-          """
+  @Test(
+    .replay(
+      stubs: [
+        .put(
+          "http://localhost:54321/storage/v1/object/bucket/file.txt",
+          200,
+          ["Content-Type": "application/json"],
           {
-            "Id": "123",
-            "Key": "bucket/file.txt"
+            """
+            {
+              "Id": "123",
+              "Key": "bucket/file.txt"
+            }
+            """
           }
-          """.utf8
         )
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request PUT \
-      	--header "Cache-Control: max-age=3600" \
-      	--header "Content-Length: 392" \
-      	--header "Content-Type: multipart/form-data; boundary=alamofire.boundary.e56f43407f772505" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "--alamofire.boundary.e56f43407f772505\#r
-      Content-Disposition: form-data; name=\"cacheControl\"\#r
-      \#r
-      3600\#r
-      --alamofire.boundary.e56f43407f772505\#r
-      Content-Disposition: form-data; name=\"metadata\"\#r
-      \#r
-      {\"mode\":\"test\"}\#r
-      --alamofire.boundary.e56f43407f772505\#r
-      Content-Disposition: form-data; name=\"\"; filename=\"file.txt\"\#r
-      Content-Type: text/plain\#r
-      \#r
-      hello world!
-      \#r
-      --alamofire.boundary.e56f43407f772505--\#r
-      " \
-      	"http://localhost:54321/storage/v1/object/bucket/file.txt"
-      """#
-    }
-    .register()
-
+  )
+  func updateFromURL() async throws {
+    let storage = makeSUT()
     let response = try await storage.from("bucket")
       .update(
         "file.txt",
@@ -765,298 +634,263 @@ final class StorageFileAPITests: XCTestCase {
         )
       )
 
-    XCTAssertEqual(response.id, "123")
-    XCTAssertEqual(response.path, "file.txt")
-    XCTAssertEqual(response.fullPath, "bucket/file.txt")
+    #expect(response.id == "123")
+    #expect(response.path == "file.txt")
+    #expect(response.fullPath == "bucket/file.txt")
   }
 
-  func testDownload() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/bucket/file.txt"),
-      statusCode: 200,
-      data: [
-        .get: Data("hello world".utf8)
+  @Test(
+    .replay(
+      stubs: [
+        .get(
+          "http://localhost:54321/storage/v1/object/bucket/file.txt",
+          200,
+          [:],
+          { "hello world" }
+        )
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/storage/v1/object/bucket/file.txt"
-      """#
-    }
-    .register()
-
+  )
+  func download() async throws {
+    let storage = makeSUT()
     let data = try await storage.from("bucket")
       .download(path: "file.txt")
 
-    XCTAssertEqual(data, Data("hello world".utf8))
+    #expect(data == Data("hello world".utf8))
   }
 
-  func testDownloadWithAdditionalQuery() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/bucket/file.txt"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data("hello world".utf8)
-      ]
+  @Test(
+    .replay(
+      stubs: [
+        .get(
+          "http://localhost:54321/storage/v1/object/bucket/file.txt?version=1",
+          200,
+          [:],
+          { "hello world" }
+        )
+      ],
+      matching: [.method, .path]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/storage/v1/object/bucket/file.txt?version=1"
-      """#
-    }
-    .register()
-
+  )
+  func downloadWithAdditionalQuery() async throws {
+    let storage = makeSUT()
     let data = try await storage.from("bucket")
       .download(
         path: "file.txt",
         query: [URLQueryItem(name: "version", value: "1")]
       )
 
-    XCTAssertEqual(data, Data("hello world".utf8))
+    #expect(data == Data("hello world".utf8))
   }
 
-  func testDownload_withEmptyTransformOptions() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/bucket/file.txt"),
-      statusCode: 200,
-      data: [
-        .get: Data("hello world".utf8)
+  @Test(
+    .replay(
+      stubs: [
+        .get(
+          "http://localhost:54321/storage/v1/object/bucket/file.txt",
+          200,
+          [:],
+          { "hello world" }
+        )
       ]
     )
-    .register()
-
+  )
+  func download_withEmptyTransformOptions() async throws {
+    let storage = makeSUT()
     let data = try await storage.from("bucket")
       .download(path: "file.txt", options: TransformOptions())
 
-    XCTAssertEqual(data, Data("hello world".utf8))
+    #expect(data == Data("hello world".utf8))
   }
 
-  func testGetPublicURL_withEmptyTransformOptions() throws {
+  @Test
+  func getPublicURL_withEmptyTransformOptions() throws {
+    let storage = makeSUT()
     let publicURL = try storage.from("bucket")
       .getPublicURL(path: "image.png", options: TransformOptions())
 
-    XCTAssertTrue(
+    #expect(
       publicURL.absoluteString.contains("/object/public/"),
       "Empty transform should use /object/public/ path, got: \(publicURL.absoluteString)"
     )
-    XCTAssertFalse(
-      publicURL.absoluteString.contains("/render/image/"),
+    #expect(
+      !publicURL.absoluteString.contains("/render/image/"),
       "Empty transform should not use /render/image/ path, got: \(publicURL.absoluteString)"
     )
   }
 
-  func testGetPublicURL_withActualTransformOptions() throws {
+  @Test
+  func getPublicURL_withActualTransformOptions() throws {
+    let storage = makeSUT()
     let publicURL = try storage.from("bucket")
       .getPublicURL(path: "image.png", options: TransformOptions(width: 200))
 
-    XCTAssertTrue(
+    #expect(
       publicURL.absoluteString.contains("/render/image/"),
       "Non-empty transform should use /render/image/ path, got: \(publicURL.absoluteString)"
     )
   }
 
-  func testDownload_withOptions() async throws {
-    let imageData = try! Data(
-      contentsOf: Bundle.module.url(forResource: "sadcat", withExtension: "jpg")!)
+  static let sadcatData = try! Data(
+    contentsOf: Bundle.module.url(forResource: "sadcat", withExtension: "jpg")!)
 
-    Mock(
-      url: url.appendingPathComponent("render/image/authenticated/bucket/sadcat.txt"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: imageData
-      ]
+  @Test(
+    .replay(
+      stubs: [
+        Stub(
+          .get,
+          "http://localhost:54321/storage/v1/render/image/authenticated/bucket/sadcat.txt?format=cover",
+          status: 200,
+          headers: ["Content-Type": "image/jpeg"],
+          body: sadcatData
+        )
+      ],
+      matching: [.method, .path]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/storage/v1/render/image/authenticated/bucket/sadcat.txt?format=cover"
-      """#
-    }
-    .register()
-
+  )
+  func download_withOptions() async throws {
+    let storage = makeSUT()
     let data = try await storage.from("bucket")
       .download(
         path: "sadcat.txt",
         options: TransformOptions(format: "cover")
       )
 
-    XCTAssertEqual(data, imageData)
+    #expect(data == Self.sadcatData)
   }
 
-  func testInfo() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/info/bucket/file.txt"),
-      statusCode: 200,
-      data: [
-        .get: Data(
-          """
+  @Test(
+    .replay(
+      stubs: [
+        .get(
+          "http://localhost:54321/storage/v1/object/info/bucket/file.txt",
+          200,
+          ["Content-Type": "application/json"],
           {
-            "name": "file.txt",
-            "id": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
-            "version": "2"
+            """
+            {
+              "name": "file.txt",
+              "id": "E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+              "version": "2"
+            }
+            """
           }
-          """.utf8
         )
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/storage/v1/object/info/bucket/file.txt"
-      """#
-    }
-    .register()
-
+  )
+  func info() async throws {
+    let storage = makeSUT()
     let info = try await storage.from("bucket").info(path: "file.txt")
 
-    XCTAssertEqual(info.name, "file.txt")
+    #expect(info.name == "file.txt")
   }
 
-  func testExists() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/bucket/file.txt"),
-      statusCode: 200,
-      data: [
-        .head: Data()
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--head \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/storage/v1/object/bucket/file.txt"
-      """#
-    }
-    .register()
-
-    let exists = try await storage.from("bucket").exists(path: "file.txt")
-
-    XCTAssertTrue(exists)
-  }
-
-  func testExists_400_error() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/bucket/file.txt"),
-      statusCode: 400,
-      data: [
-        .head: Data()
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--head \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/storage/v1/object/bucket/file.txt"
-      """#
-    }
-    .register()
-
-    let exists = try await storage.from("bucket").exists(path: "file.txt")
-
-    XCTAssertFalse(exists)
-  }
-
-  func testExists_404_error() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/bucket/file.txt"),
-      statusCode: 404,
-      data: [
-        .head: Data()
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--head \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/storage/v1/object/bucket/file.txt"
-      """#
-    }
-    .register()
-
-    let exists = try await storage.from("bucket").exists(path: "file.txt")
-
-    XCTAssertFalse(exists)
-  }
-
-  func testCreateSignedUploadURL() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/upload/sign/bucket/file.txt"),
-      statusCode: 200,
-      data: [
-        .post: Data(
-          """
-          {
-            "url": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
-          }
-          """.utf8
+  @Test(
+    .replay(
+      stubs: [
+        .head(
+          "http://localhost:54321/storage/v1/object/bucket/file.txt",
+          200,
+          [:]
         )
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/storage/v1/object/upload/sign/bucket/file.txt"
-      """#
-    }
-    .register()
+  )
+  func exists() async throws {
+    let storage = makeSUT()
+    let exists = try await storage.from("bucket").exists(path: "file.txt")
 
+    #expect(exists)
+  }
+
+  @Test(
+    .replay(
+      stubs: [
+        .head(
+          "http://localhost:54321/storage/v1/object/bucket/file.txt",
+          400,
+          [:]
+        )
+      ]
+    )
+  )
+  func exists_400_error() async throws {
+    let storage = makeSUT()
+    let exists = try await storage.from("bucket").exists(path: "file.txt")
+
+    #expect(!exists)
+  }
+
+  @Test(
+    .replay(
+      stubs: [
+        .head(
+          "http://localhost:54321/storage/v1/object/bucket/file.txt",
+          404,
+          [:]
+        )
+      ]
+    )
+  )
+  func exists_404_error() async throws {
+    let storage = makeSUT()
+    let exists = try await storage.from("bucket").exists(path: "file.txt")
+
+    #expect(!exists)
+  }
+
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/upload/sign/bucket/file.txt",
+          200,
+          ["Content-Type": "application/json"],
+          {
+            """
+            {
+              "url": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+            }
+            """
+          }
+        )
+      ]
+    )
+  )
+  func createSignedUploadURL() async throws {
+    let storage = makeSUT()
     let response = try await storage.from("bucket")
       .createSignedUploadURL(path: "file.txt")
 
-    XCTAssertEqual(response.path, "file.txt")
-    XCTAssertEqual(response.token, "abc.def.ghi")
-    XCTAssertEqual(
-      response.signedURL.absoluteString,
-      "http://localhost:54321/storage/v1/object/upload/sign/bucket/file.txt?token=abc.def.ghi")
+    #expect(response.path == "file.txt")
+    #expect(response.token == "abc.def.ghi")
+    #expect(
+      response.signedURL.absoluteString
+        == "http://localhost:54321/storage/v1/object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+    )
   }
 
-  func testCreateSignedUploadURL_withUpsert() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/upload/sign/bucket/file.txt"),
-      statusCode: 200,
-      data: [
-        .post: Data(
-          """
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/upload/sign/bucket/file.txt",
+          200,
+          ["Content-Type": "application/json"],
           {
-            "url": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+            """
+            {
+              "url": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+            }
+            """
           }
-          """.utf8
         )
       ]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--header "x-upsert: true" \
-      	"http://localhost:54321/storage/v1/object/upload/sign/bucket/file.txt"
-      """#
-    }
-    .register()
-
+  )
+  func createSignedUploadURL_withUpsert() async throws {
+    let storage = makeSUT()
     let response = try await storage.from("bucket")
       .createSignedUploadURL(
         path: "file.txt",
@@ -1065,102 +899,63 @@ final class StorageFileAPITests: XCTestCase {
         )
       )
 
-    XCTAssertEqual(response.path, "file.txt")
-    XCTAssertEqual(response.token, "abc.def.ghi")
-    XCTAssertEqual(
-      response.signedURL.absoluteString,
-      "http://localhost:54321/storage/v1/object/upload/sign/bucket/file.txt?token=abc.def.ghi")
+    #expect(response.path == "file.txt")
+    #expect(response.token == "abc.def.ghi")
+    #expect(
+      response.signedURL.absoluteString
+        == "http://localhost:54321/storage/v1/object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+    )
   }
 
-  func testUploadToSignedURL() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/upload/sign/bucket/file.txt"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .put: Data(
-          """
+  @Test(
+    .replay(
+      stubs: [
+        .put(
+          "http://localhost:54321/storage/v1/object/upload/sign/bucket/file.txt?token=abc.def.ghi",
+          200,
+          ["Content-Type": "application/json"],
           {
-            "Key": "bucket/file.txt"
+            """
+            {
+              "Key": "bucket/file.txt"
+            }
+            """
           }
-          """.utf8)
-      ]
+        )
+      ],
+      matching: [.method, .path]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request PUT \
-      	--header "Cache-Control: max-age=3600" \
-      	--header "Content-Length: 297" \
-      	--header "Content-Type: multipart/form-data; boundary=alamofire.boundary.e56f43407f772505" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--header "x-upsert: false" \
-      	--data "--alamofire.boundary.e56f43407f772505\#r
-      Content-Disposition: form-data; name=\"cacheControl\"\#r
-      \#r
-      3600\#r
-      --alamofire.boundary.e56f43407f772505\#r
-      Content-Disposition: form-data; name=\"\"; filename=\"file.txt\"\#r
-      Content-Type: text/plain;charset=UTF-8\#r
-      \#r
-      hello world\#r
-      --alamofire.boundary.e56f43407f772505--\#r
-      " \
-      	"http://localhost:54321/storage/v1/object/upload/sign/bucket/file.txt?token=abc.def.ghi"
-      """#
-    }
-    .register()
-
+  )
+  func uploadToSignedURL() async throws {
+    let storage = makeSUT()
     let response = try await storage.from("bucket")
       .uploadToSignedURL("file.txt", token: "abc.def.ghi", data: Data("hello world".utf8))
 
-    XCTAssertEqual(response.path, "file.txt")
-    XCTAssertEqual(response.fullPath, "bucket/file.txt")
+    #expect(response.path == "file.txt")
+    #expect(response.fullPath == "bucket/file.txt")
   }
 
-  func testUploadToSignedURL_fromFileURL() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/upload/sign/bucket/file.txt"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .put: Data(
-          """
+  @Test(
+    .replay(
+      stubs: [
+        .put(
+          "http://localhost:54321/storage/v1/object/upload/sign/bucket/file.txt?token=abc.def.ghi",
+          200,
+          ["Content-Type": "application/json"],
           {
-            "Key": "bucket/file.txt"
+            """
+            {
+              "Key": "bucket/file.txt"
+            }
+            """
           }
-          """.utf8)
-      ]
+        )
+      ],
+      matching: [.method, .path]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request PUT \
-      	--header "Cache-Control: max-age=3600" \
-      	--header "Content-Length: 285" \
-      	--header "Content-Type: multipart/form-data; boundary=alamofire.boundary.e56f43407f772505" \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "X-Mode: test" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--header "x-upsert: false" \
-      	--data "--alamofire.boundary.e56f43407f772505\#r
-      Content-Disposition: form-data; name=\"cacheControl\"\#r
-      \#r
-      3600\#r
-      --alamofire.boundary.e56f43407f772505\#r
-      Content-Disposition: form-data; name=\"\"; filename=\"file.txt\"\#r
-      Content-Type: text/plain\#r
-      \#r
-      hello world!
-      \#r
-      --alamofire.boundary.e56f43407f772505--\#r
-      " \
-      	"http://localhost:54321/storage/v1/object/upload/sign/bucket/file.txt?token=abc.def.ghi"
-      """#
-    }
-    .register()
-
+  )
+  func uploadToSignedURL_fromFileURL() async throws {
+    let storage = makeSUT()
     let response = try await storage.from("bucket")
       .uploadToSignedURL(
         "file.txt",
@@ -1171,100 +966,145 @@ final class StorageFileAPITests: XCTestCase {
         )
       )
 
-    XCTAssertEqual(response.path, "file.txt")
-    XCTAssertEqual(response.fullPath, "bucket/file.txt")
+    #expect(response.path == "file.txt")
+    #expect(response.fullPath == "bucket/file.txt")
   }
 
-  func testCreateSignedURL_cacheNonce() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/sign/bucket/file.txt"),
-      statusCode: 200,
-      data: [
-        .post: Data(
-          """
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/sign/bucket/file.txt",
+          200,
+          ["Content-Type": "application/json"],
           {
-            "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+            """
+            {
+              "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+            }
+            """
           }
-          """.utf8
         )
       ]
     )
-    .register()
-
+  )
+  func createSignedURL_cacheNonce() async throws {
+    let storage = makeSUT()
     let url = try await storage.from("bucket").createSignedURL(
       path: "file.txt",
       expiresIn: 3600,
       cacheNonce: "abc123"
     )
-    XCTAssertEqual(
-      url.absoluteString,
-      "\(self.url)/object/upload/sign/bucket/file.txt?token=abc.def.ghi&cacheNonce=abc123")
+    #expect(
+      url.absoluteString
+        == "\(self.url)/object/upload/sign/bucket/file.txt?token=abc.def.ghi&cacheNonce=abc123")
   }
 
-  func testCreateSignedURLs_cacheNonce() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/sign/bucket"),
-      statusCode: 200,
-      data: [
-        .post: Data(
-          """
-          [
-            {
-              "path": "file.txt",
-              "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
-            }
-          ]
-          """.utf8
+  @Test(
+    .replay(
+      stubs: [
+        .post(
+          "http://localhost:54321/storage/v1/object/sign/bucket",
+          200,
+          ["Content-Type": "application/json"],
+          {
+            """
+            [
+              {
+                "path": "file.txt",
+                "signedURL": "object/upload/sign/bucket/file.txt?token=abc.def.ghi"
+              }
+            ]
+            """
+          }
         )
       ]
     )
-    .register()
-
+  )
+  func createSignedURLs_cacheNonce() async throws {
+    let storage = makeSUT()
     let results: [SignedURLResult] = try await storage.from("bucket").createSignedURLs(
       paths: ["file.txt"],
       expiresIn: 3600,
       cacheNonce: "abc123"
     )
     guard case .success(_, let url) = results[0] else {
-      return XCTFail("Expected success for file.txt")
+      Issue.record("Expected success for file.txt")
+      return
     }
-    XCTAssertEqual(
-      url.absoluteString,
-      "\(self.url)/object/upload/sign/bucket/file.txt?token=abc.def.ghi&cacheNonce=abc123")
+    #expect(
+      url.absoluteString
+        == "\(self.url)/object/upload/sign/bucket/file.txt?token=abc.def.ghi&cacheNonce=abc123")
   }
 
-  func testGetPublicURL_cacheNonce() throws {
+  @Test
+  func getPublicURL_cacheNonce() throws {
+    let storage = makeSUT()
     let url = try storage.from("bucket").getPublicURL(
       path: "file.txt",
       cacheNonce: "abc123"
     )
-    XCTAssertEqual(
-      url.absoluteString,
-      "\(self.url)/object/public/bucket/file.txt?cacheNonce=abc123")
+    #expect(
+      url.absoluteString
+        == "\(self.url)/object/public/bucket/file.txt?cacheNonce=abc123")
   }
 
-  func testDownload_cacheNonce() async throws {
-    Mock(
-      url: url.appendingPathComponent("object/bucket/file.txt"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data("hello world".utf8)
-      ]
+  @Test(
+    .replay(
+      stubs: [
+        .get(
+          "http://localhost:54321/storage/v1/object/bucket/file.txt?cacheNonce=abc123",
+          200,
+          [:],
+          { "hello world" }
+        )
+      ],
+      matching: [.method, .path]
     )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "X-Client-Info: storage-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/storage/v1/object/bucket/file.txt?cacheNonce=abc123"
-      """#
-    }
-    .register()
-
+  )
+  func download_cacheNonce() async throws {
+    let storage = makeSUT()
     let data = try await storage.from("bucket")
       .download(path: "file.txt", cacheNonce: "abc123")
 
-    XCTAssertEqual(data, Data("hello world".utf8))
+    #expect(data == Data("hello world".utf8))
+  }
+}
+
+/// Decodes a request's JSON body for structural comparison in `.custom` Replay matchers,
+/// so write-endpoint tests can assert on request-body content (e.g. `sourceKey`/`destinationKey`
+/// are not swapped) without needing exact byte-for-byte matching (key order, whitespace).
+///
+/// `URLSession` may expose the body via `httpBody` or, once the request has been handed to the
+/// loading system, via `httpBodyStream` — read whichever is present.
+private func jsonBody(of request: URLRequest) -> [String: AnyJSON]? {
+  let data: Data?
+  if let body = request.httpBody {
+    data = body
+  } else if let stream = request.httpBodyStream {
+    data = Data(readingAllOf: stream)
+  } else {
+    data = nil
+  }
+  guard let data else { return nil }
+  return try? JSONDecoder().decode([String: AnyJSON].self, from: data)
+}
+
+extension Data {
+  fileprivate init(readingAllOf stream: InputStream) {
+    stream.open()
+    defer { stream.close() }
+    var data = Data()
+    let bufferSize = 4096
+    var buffer = [UInt8](repeating: 0, count: bufferSize)
+    while stream.hasBytesAvailable {
+      let read = stream.read(&buffer, maxLength: bufferSize)
+      if read > 0 {
+        data.append(buffer, count: read)
+      } else {
+        break
+      }
+    }
+    self = data
   }
 }
