@@ -19,8 +19,10 @@ struct PostgrestTransformBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .post("http://localhost:54321/rest/v1/users", 201, [:]) { #"{"username":"admin""# }
-      ], matching: [.method, .path], scope: .test))
+        .post(
+          "http://localhost:54321/rest/v1/users?select=username%2C%22first%20name%22", 201, [:]
+        ) { #"{"username":"admin""# }
+      ], scope: .test))
   func select() async throws {
     try await sut
       .from("users")
@@ -33,7 +35,8 @@ struct PostgrestTransformBuilderTests {
     .replay(
       stubs: [
         .get(
-          "http://localhost:54321/rest/v1/cities", 200,
+          "http://localhost:54321/rest/v1/cities?select=name%2Ccountry%3Acountries%28name%29&countries.order=name.asc.nullslast",
+          200,
           [:],
           {
             """
@@ -56,7 +59,7 @@ struct PostgrestTransformBuilderTests {
                 ]
             """
           })
-      ], matching: [.method, .path], scope: .test))
+      ], scope: .test))
   func order() async throws {
     let countries =
       try await sut
@@ -80,8 +83,11 @@ struct PostgrestTransformBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .get("http://localhost:54321/rest/v1/cities", 200, [:]) { "[]" }
-      ], matching: [.method, .path], scope: .test))
+        .get(
+          "http://localhost:54321/rest/v1/cities?select=name%2Cnum_of_habitants&order=num_of_habitants.asc.nullslast%2Cname.desc.nullsfirst",
+          200, [:]
+        ) { "[]" }
+      ], scope: .test))
   func multipleOrder() async throws {
     try await sut
       .from("cities")
@@ -95,7 +101,8 @@ struct PostgrestTransformBuilderTests {
     .replay(
       stubs: [
         .get(
-          "http://localhost:54321/rest/v1/countries", 200,
+          "http://localhost:54321/rest/v1/countries?select=name%2Ccities%28name%29&cities.limit=1",
+          200,
           [:],
           {
             """
@@ -111,7 +118,7 @@ struct PostgrestTransformBuilderTests {
             ]
             """
           })
-      ], matching: [.method, .path], scope: .test))
+      ], scope: .test))
   func limit() async throws {
     let countries =
       try await sut
@@ -135,7 +142,8 @@ struct PostgrestTransformBuilderTests {
     .replay(
       stubs: [
         .get(
-          "http://localhost:54321/rest/v1/countries", 200,
+          "http://localhost:54321/rest/v1/countries?select=name%2Ccities%28name%29&offset=0&limit=2",
+          200,
           [:],
           {
             """
@@ -151,7 +159,7 @@ struct PostgrestTransformBuilderTests {
             ]
             """
           })
-      ], matching: [.method, .path], scope: .test))
+      ], scope: .test))
   func range() async throws {
     let countries =
       try await sut
@@ -174,8 +182,11 @@ struct PostgrestTransformBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .get("http://localhost:54321/rest/v1/countries", 200, [:]) { "[]" }
-      ], matching: [.method, .path], scope: .test))
+        .get(
+          "http://localhost:54321/rest/v1/countries?select=name%2Ccities%28name%29&cities.offset=0&cities.limit=2",
+          200, [:]
+        ) { "[]" }
+      ], scope: .test))
   func rangeWithReferencedTable() async throws {
     try await sut
       .from("countries")
@@ -195,7 +206,7 @@ struct PostgrestTransformBuilderTests {
     .replay(
       stubs: [
         .get(
-          "http://localhost:54321/rest/v1/countries", 200,
+          "http://localhost:54321/rest/v1/countries?select=name&limit=1", 200,
           [:],
           {
             """
@@ -204,7 +215,7 @@ struct PostgrestTransformBuilderTests {
             }
             """
           })
-      ], matching: [.method, .path], scope: .test))
+      ], scope: .test))
   func single() async throws {
     let country =
       try await sut
@@ -221,10 +232,10 @@ struct PostgrestTransformBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .get("http://localhost:54321/rest/v1/countries", 200, [:]) {
+        .get("http://localhost:54321/rest/v1/countries?select=%2A", 200, [:]) {
           "id,name\n1,Afghanistan\n2,Albania\n3,Algeria"
         }
-      ], matching: [.method, .path], scope: .test))
+      ], scope: .test))
   func csv() async throws {
     let csv =
       try await sut
@@ -246,8 +257,8 @@ struct PostgrestTransformBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .get("http://localhost:54321/rest/v1/countries", 200, [:]) { "[]" }
-      ], matching: [.method, .path], scope: .test))
+        .get("http://localhost:54321/rest/v1/countries?select=area", 200, [:]) { "[]" }
+      ], scope: .test))
   func geoJSON() async throws {
     try await sut
       .from("countries")
@@ -259,7 +270,7 @@ struct PostgrestTransformBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .get("http://localhost:54321/rest/v1/countries", 200, [:]) {
+        .get("http://localhost:54321/rest/v1/countries?select=%2A", 200, [:]) {
           """
           Aggregate  (cost=33.34..33.36 rows=1 width=112) (actual time=0.041..0.041 rows=1 loops=1)
             Output: NULL::bigint, count(ROW(countries.id, countries.name)), COALESCE(json_agg(ROW(countries.id, countries.name)), '[]'::json), NULLIF(current_setting('response.headers'::text, true), ''::text), NULLIF(current_setting('response.status'::text, true), ''::text)
@@ -272,7 +283,7 @@ struct PostgrestTransformBuilderTests {
           Execution Time: 0.119 ms
           """
         }
-      ], matching: [.method, .path], scope: .test))
+      ], scope: .test))
   func explain() async throws {
     let explain =
       try await sut
@@ -288,8 +299,8 @@ struct PostgrestTransformBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .get("http://localhost:54321/rest/v1/countries", 200, [:]) { "[]" }
-      ], matching: [.method, .path], scope: .test))
+        .get("http://localhost:54321/rest/v1/countries?select=%2A", 200, [:]) { "[]" }
+      ], scope: .test))
   func explainWithJSONFormat() async throws {
     _ =
       try await sut
@@ -302,8 +313,8 @@ struct PostgrestTransformBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .patch("http://localhost:54321/rest/v1/users", 200, [:]) { "[]" }
-      ], matching: [.method, .path], scope: .test))
+        .patch("http://localhost:54321/rest/v1/users?id=eq.1", 200, [:]) { "[]" }
+      ], scope: .test))
   func maxAffectedOnUpdate() async throws {
     try await sut
       .from("users")
@@ -316,8 +327,8 @@ struct PostgrestTransformBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .patch("http://localhost:54321/rest/v1/users", 200, [:]) { "[]" }
-      ], matching: [.method, .path], scope: .test))
+        .patch("http://localhost:54321/rest/v1/users?id=eq.1", 200, [:]) { "[]" }
+      ], scope: .test))
   func maxAffectedTwice() async throws {
     try await sut
       .from("users")
@@ -331,8 +342,10 @@ struct PostgrestTransformBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .delete("http://localhost:54321/rest/v1/users", 200, [:]) { "[]" }
-      ], matching: [.method, .path], scope: .test))
+        .delete("http://localhost:54321/rest/v1/users?id=in.%281%2C2%2C3%2C4%2C5%29", 200, [:]) {
+          "[]"
+        }
+      ], scope: .test))
   func maxAffectedOnDelete() async throws {
     try await sut
       .from("users")
@@ -346,7 +359,7 @@ struct PostgrestTransformBuilderTests {
     .replay(
       stubs: [
         .post("http://localhost:54321/rest/v1/rpc/delete_users", 200, [:]) { "[]" }
-      ], matching: [.method, .path], scope: .test))
+      ], scope: .test))
   func maxAffectedOnRpc() async throws {
     try await sut
       .rpc("delete_users")
@@ -357,8 +370,8 @@ struct PostgrestTransformBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .get("http://localhost:54321/rest/v1/users", 200, [:]) { "[]" }
-      ], matching: [.method, .path], scope: .test))
+        .get("http://localhost:54321/rest/v1/users?select=%2A", 200, [:]) { "[]" }
+      ], scope: .test))
   func maxAffectedOnSelect() async throws {
     try await sut
       .from("users")
@@ -370,8 +383,8 @@ struct PostgrestTransformBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .get("http://localhost:54321/rest/v1/countries", 200, [:]) { "[]" }
-      ], matching: [.method, .path], scope: .test))
+        .get("http://localhost:54321/rest/v1/countries?select=%2A", 200, [:]) { "[]" }
+      ], scope: .test))
   func stripNulls() async throws {
     try await sut
       .from("countries")

@@ -100,8 +100,8 @@ final class PostgrestBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .head("http://localhost:54321/rest/v1/users", 200, [:])
-      ], matching: [.method, .path], scope: .test))
+        .head("http://localhost:54321/rest/v1/users?select=%2A", 200, [:])
+      ], scope: .test))
   func executeWithHead() async throws {
     try await sut.from("users")
       .select()
@@ -111,8 +111,8 @@ final class PostgrestBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .get("http://localhost:54321/rest/v1/users", 200, [:]) { "[]" }
-      ], matching: [.method, .path], scope: .test))
+        .get("http://localhost:54321/rest/v1/users?select=%2A", 200, [:]) { "[]" }
+      ], scope: .test))
   func executeWithCount() async throws {
     try await sut.from("users")
       .select()
@@ -122,8 +122,8 @@ final class PostgrestBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .get("http://localhost:54321/rest/v1/users", 200, [:]) { "[]" }
-      ], matching: [.method, .path], scope: .test))
+        .get("http://localhost:54321/rest/v1/users?select=%2A", 200, [:]) { "[]" }
+      ], scope: .test))
   func executeWithCustomSchema() async throws {
     try await sut
       .schema("private")
@@ -135,8 +135,8 @@ final class PostgrestBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .head("http://localhost:54321/rest/v1/users", 200, [:])
-      ], matching: [.method, .path], scope: .test))
+        .head("http://localhost:54321/rest/v1/users?select=%2A", 200, [:])
+      ], scope: .test))
   func executeWithCustomSchemaAndHeadMethod() async throws {
     try await sut
       .schema("private")

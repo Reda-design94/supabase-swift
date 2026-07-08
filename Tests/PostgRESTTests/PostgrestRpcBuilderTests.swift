@@ -20,7 +20,7 @@ struct PostgrestRpcBuilderTests {
     .replay(
       stubs: [
         .post(
-          "http://localhost:54321/rest/v1/rpc/list_stored_countries", 200,
+          "http://localhost:54321/rest/v1/rpc/list_stored_countries?id=eq.1", 200,
           [:],
           {
             """
@@ -30,7 +30,7 @@ struct PostgrestRpcBuilderTests {
             }
             """
           })
-      ], matching: [.method, .path], scope: .test))
+      ], scope: .test))
   func rpc() async throws {
     let country =
       try await sut
@@ -47,7 +47,7 @@ struct PostgrestRpcBuilderTests {
     .replay(
       stubs: [
         .get("http://localhost:54321/rest/v1/rpc/hello_world", 200, [:]) { "Hello World" }
-      ], matching: [.method, .path], scope: .test))
+      ], scope: .test))
   func rpcReadOnly() async throws {
     try await sut
       .rpc("hello_world", get: true)
@@ -82,7 +82,7 @@ struct PostgrestRpcBuilderTests {
     .replay(
       stubs: [
         .get(
-          "http://localhost:54321/rest/v1/rpc/sum", 200,
+          "http://localhost:54321/rest/v1/rpc/sum?key=value&numbers=%7B1,2,3%7D", 200,
           [:],
           {
             """
@@ -91,7 +91,7 @@ struct PostgrestRpcBuilderTests {
             }
             """
           })
-      ], matching: [.method, .path], scope: .test))
+      ], matching: [.method, .path, .query], scope: .test))
   func rpcWithGetMethodAndJSONObjectShouldCleanArray() async throws {
     struct Response: Decodable {
       let sum: Int
@@ -116,8 +116,11 @@ struct PostgrestRpcBuilderTests {
   @Test(
     .replay(
       stubs: [
-        .get("http://localhost:54321/rest/v1/rpc/scalar", 200, [:]) { "{}" }
-      ], matching: [.method, .path], scope: .test))
+        .get(
+          "http://localhost:54321/rest/v1/rpc/scalar?disabled=false&enabled=true&flags=%7Btrue,false,null%7D&maybe=null&nested=%7B%22a%22:1%7D&number=42",
+          200, [:]
+        ) { "{}" }
+      ], matching: [.method, .path, .query], scope: .test))
   func rpcWithGetMethodEncodesScalarParamsByJSONType() async throws {
     try await sut
       .rpc(
@@ -139,7 +142,7 @@ struct PostgrestRpcBuilderTests {
     .replay(
       stubs: [
         .post("http://localhost:54321/rest/v1/rpc/hello", 200, [:]) { "" }
-      ], matching: [.method, .path], scope: .test))
+      ], scope: .test))
   func rpcWithCount() async throws {
     try await sut.rpc("hello", count: .estimated).execute()
   }
