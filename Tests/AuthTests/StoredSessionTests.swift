@@ -1,14 +1,22 @@
 import ConcurrencyExtras
+import Foundation
 import SnapshotTesting
-import TestHelpers
-import XCTest
+import Testing
 
 @testable import Auth
 
-final class StoredSessionTests: XCTestCase {
+#if os(Android)
+  private let isAndroid = true
+#else
+  private let isAndroid = false
+#endif
+
+@Suite
+struct StoredSessionTests {
   let clientID = AuthClientID()
 
-  func testGet_withCorruptedJSON_returnsNil() throws {
+  @Test
+  func get_withCorruptedJSON_returnsNil() throws {
     let localStorage = InMemoryLocalStorage()
     try localStorage.store(
       key: "supabase.auth.token",
@@ -31,14 +39,15 @@ final class StoredSessionTests: XCTestCase {
     )
 
     let sut = Dependencies[testClientID].sessionStorage
-    XCTAssertNil(sut.get())
+    #expect(sut.get() == nil)
   }
 
-  func testStoredSession() throws {
-    #if os(Android)
-      throw XCTSkip("Disabled for android due to #filePath not existing on emulator")
-    #endif
-
+  @Test(
+    .disabled(
+      if: isAndroid, "Disabled for android due to #filePath not existing on emulator"
+    )
+  )
+  func storedSession() throws {
     Dependencies[clientID] = Dependencies(
       configuration: AuthClient.Configuration(
         url: URL(string: "http://localhost")!,
@@ -55,7 +64,7 @@ final class StoredSessionTests: XCTestCase {
 
     let sut = Dependencies[clientID].sessionStorage
 
-    XCTAssertNotNil(sut.get())
+    #expect(sut.get() != nil)
 
     let session = Session(
       accessToken: "accesstoken",
@@ -109,7 +118,7 @@ final class StoredSessionTests: XCTestCase {
     )
 
     sut.store(session)
-    XCTAssertNotNil(sut.get())
+    #expect(sut.get() != nil)
   }
 
   private final class DiskTestStorage: AuthLocalStorage {
