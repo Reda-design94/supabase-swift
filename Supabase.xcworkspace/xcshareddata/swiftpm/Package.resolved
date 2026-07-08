@@ -1,5 +1,5 @@
 {
-  "originHash" : "68a31593121bf823182bc731b17208689dafb38f7cb085035de5e74a0ed41e89",
+  "originHash" : "32aad390624db0fa3d2906f2054a69c041025d608841975c529f6ddda7a109cc",
   "pins" : [
     {
       "identity" : "appauth-ios",
@@ -83,6 +83,15 @@
       }
     },
     {
+      "identity" : "replay",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/mattt/Replay.git",
+      "state" : {
+        "revision" : "f641f9c06a4a01c73342aa0879a860591b608418",
+        "version" : "0.4.0"
+      }
+    },
+    {
       "identity" : "simplekeychain",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/auth0/SimpleKeychain",
@@ -98,6 +107,15 @@
       "state" : {
         "revision" : "6465962facdd25cb96eaebc35603afa2f15d2c0d",
         "version" : "1.0.6"
+      }
+    },
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser.git",
+      "state" : {
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
       }
     },
     {

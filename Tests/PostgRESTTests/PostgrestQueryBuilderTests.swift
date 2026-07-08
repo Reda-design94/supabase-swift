@@ -5,57 +5,45 @@
 //  Created by Guilherme Souza on 21/01/25.
 //
 
-import InlineSnapshotTesting
-import Mocker
+import Foundation
 import PostgREST
-import TestHelpers
-import XCTest
+import Replay
+import Testing
 
-final class PostgrestQueryBuilderTests: PostgrestQueryTests {
-  override func setUp() {
-    super.setUp()
-    //    isRecording = true
-  }
+@Suite
+struct PostgrestQueryBuilderTests {
+  let fixture = PostgrestQueryFixture()
+  var url: URL { fixture.url }
+  var sut: PostgrestClient { fixture.sut }
 
-  func testSetAuth() {
-    XCTAssertNil(sut.configuration.headers["Authorization"])
+  @Test
+  func setAuth() {
+    #expect(sut.configuration.headers["Authorization"] == nil)
     sut.setAuth("token")
-    XCTAssertEqual(sut.configuration.headers["Authorization"], "Bearer token")
+    #expect(sut.configuration.headers["Authorization"] == "Bearer token")
 
     sut.setAuth(nil)
-    XCTAssertNil(sut.configuration.headers["Authorization"])
+    #expect(sut.configuration.headers["Authorization"] == nil)
   }
 
-  func testSelect() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data(
-          """
-          [
-            {
-              "id": 1,
-              "username": "supabase"
-            }
-          ]
-          """.utf8
-        )
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?select=*"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get(
+          "http://localhost:54321/rest/v1/users", 200,
+          [:],
+          {
+            """
+            [
+              {
+                "id": 1,
+                "username": "supabase"
+              }
+            ]
+            """
+          })
+      ], matching: [.method, .path], scope: .test))
+  func select() async throws {
     let users =
       try await sut
       .from("users")
@@ -63,90 +51,40 @@ final class PostgrestQueryBuilderTests: PostgrestQueryTests {
       .execute()
       .value as [User]
 
-    XCTAssertEqual(users[0].id, 1)
-    XCTAssertEqual(users[0].username, "supabase")
+    #expect(users[0].id == 1)
+    #expect(users[0].username == "supabase")
   }
 
-  func testSelectWithWhitespaceInQuery() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data()
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?select=somecolumn"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get("http://localhost:54321/rest/v1/users", 200, [:]) { "" }
+      ], matching: [.method, .path], scope: .test))
+  func selectWithWhitespaceInQuery() async throws {
     try await sut
       .from("users")
       .select("some column")
       .execute()
   }
 
-  func testSelectWithQuoteInQuery() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data()
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?select=some%22column%22"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get("http://localhost:54321/rest/v1/users", 200, [:]) { "" }
+      ], matching: [.method, .path], scope: .test))
+  func selectWithQuoteInQuery() async throws {
     try await sut
       .from("users")
       .select(#"some "column""#)
       .execute()
   }
 
-  func testSelectWithCount() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .head: Data()
-      ],
-      additionalHeaders: [
-        "Content-Range": "0-9/10"
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--head \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: count=exact" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?select=*"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .head("http://localhost:54321/rest/v1/users", 200, ["Content-Range": "0-9/10"])
+      ], matching: [.method, .path], scope: .test))
+  func selectWithCount() async throws {
     let count =
       try await sut
       .from("users")
@@ -154,34 +92,15 @@ final class PostgrestQueryBuilderTests: PostgrestQueryTests {
       .execute()
       .count
 
-    XCTAssertEqual(count, 10)
+    #expect(count == 10)
   }
 
-  func testInsert() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 201,
-      data: [
-        .post: Data()
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Accept: application/json" \
-      	--header "Content-Length: 59" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: return=minimal,count=estimated" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "[{\"id\":1,\"username\":\"supabase\"},{\"id\":1,\"username\":\"supa\"}]" \
-      	"http://localhost:54321/rest/v1/users?columns=%22id%22,%22username%22"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .post("http://localhost:54321/rest/v1/users", 201, [:]) { "" }
+      ], matching: [.method, .path], scope: .test))
+  func insert() async throws {
     try await sut
       .from("users")
       .insert(
@@ -195,61 +114,24 @@ final class PostgrestQueryBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testInsertQuotesColumnNameContainingReservedCharacter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 201,
-      data: [
-        .post: Data()
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Accept: application/json" \
-      	--header "Content-Length: 11" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: return=minimal" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "[{\"a,b\":1}]" \
-      	"http://localhost:54321/rest/v1/users?columns=%22a,b%22"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .post("http://localhost:54321/rest/v1/users", 201, [:]) { "" }
+      ], matching: [.method, .path], scope: .test))
+  func insertQuotesColumnNameContainingReservedCharacter() async throws {
     try await sut
       .from("users")
       .insert([["a,b": 1]], returning: .minimal)
       .execute()
   }
 
-  func testInsertWithExistingPreferHeader() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      statusCode: 201,
-      data: [
-        .post: Data()
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Accept: application/json" \
-      	--header "Content-Length: 30" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: existing=value,return=minimal" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"id\":1,\"username\":\"supabase\"}" \
-      	"http://localhost:54321/rest/v1/users"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .post("http://localhost:54321/rest/v1/users", 201, [:]) { "" }
+      ], matching: [.method, .path], scope: .test))
+  func insertWithExistingPreferHeader() async throws {
     try await sut
       .from("users")
       .setHeader(name: "Prefer", value: "existing=value")
@@ -257,31 +139,12 @@ final class PostgrestQueryBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testUpdate() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 201,
-      data: [
-        .patch: Data()
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request PATCH \
-      	--header "Accept: application/json" \
-      	--header "Content-Length: 24" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: existing=value,return=minimal,count=planned" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"username\":\"supabase2\"}" \
-      	"http://localhost:54321/rest/v1/users?id=eq.1"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .patch("http://localhost:54321/rest/v1/users", 201, [:]) { "" }
+      ], matching: [.method, .path], scope: .test))
+  func update() async throws {
     try await sut
       .from("users")
       .setHeader(name: "Prefer", value: "existing=value")
@@ -290,31 +153,12 @@ final class PostgrestQueryBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testUpsert() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 201,
-      data: [
-        .post: Data()
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Accept: application/json" \
-      	--header "Content-Length: 60" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: existing=value,resolution=merge-duplicates,return=minimal,count=estimated" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "[{\"id\":1,\"username\":\"admin\"},{\"id\":2,\"username\":\"supabase\"}]" \
-      	"http://localhost:54321/rest/v1/users?columns=%22id%22,%22username%22&on_conflict=username"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .post("http://localhost:54321/rest/v1/users", 201, [:]) { "" }
+      ], matching: [.method, .path], scope: .test))
+  func upsert() async throws {
     try await sut
       .from("users")
       .setHeader(name: "Prefer", value: "existing=value")
@@ -330,60 +174,24 @@ final class PostgrestQueryBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testUpsertIgnoreDuplicates() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 201,
-      data: [
-        .post: Data()
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Accept: application/json" \
-      	--header "Content-Length: 27" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: resolution=ignore-duplicates,return=representation" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"id\":1,\"username\":\"admin\"}" \
-      	"http://localhost:54321/rest/v1/users"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .post("http://localhost:54321/rest/v1/users", 201, [:]) { "" }
+      ], matching: [.method, .path], scope: .test))
+  func upsertIgnoreDuplicates() async throws {
     try await sut
       .from("users")
       .upsert(User(id: 1, username: "admin"), ignoreDuplicates: true)
       .execute()
   }
 
-  func testDelete() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 204,
-      data: [
-        .delete: Data()
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request DELETE \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: existing=value,return=representation,count=estimated" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?username=eq.supabase"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .delete("http://localhost:54321/rest/v1/users", 204, [:]) { "" }
+      ], matching: [.method, .path], scope: .test))
+  func delete() async throws {
     try await sut
       .from("users")
       .setHeader(name: "Prefer", value: "existing=value")

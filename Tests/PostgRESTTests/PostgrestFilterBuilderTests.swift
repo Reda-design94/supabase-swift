@@ -5,37 +5,23 @@
 //  Created by Guilherme Souza on 21/01/25.
 //
 
-import InlineSnapshotTesting
-import Mocker
+import Foundation
 import PostgREST
-import XCTest
+import Replay
+import Testing
 
-final class PostgrestFilterBuilderTests: PostgrestQueryTests {
+private let usersStub: [Stub] = [
+  .get("http://localhost:54321/rest/v1/users", 200, [:]) { "[]" }
+]
 
-  override func setUp() {
-    super.setUp()
-    // isRecording = true
-  }
+@Suite
+struct PostgrestFilterBuilderTests {
+  let fixture = PostgrestQueryFixture()
+  var url: URL { fixture.url }
+  var sut: PostgrestClient { fixture.sut }
 
-  func testNotFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?select=*&status=not.eq.OFFLINE"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func notFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -44,25 +30,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testOrFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?or=(status.eq.OFFLINE,username.eq.test)&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func orFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -71,25 +40,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testOrFilterWithReferencedTable() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?messages.or=(public.eq.true,recipient_id.eq.1)&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func orFilterWithReferencedTable() async throws {
     _ =
       try await sut
       .from("users")
@@ -98,25 +50,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testContainsFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?address=cs.%7B%22postcode%22:90210%7D&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func containsFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -125,25 +60,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testTextSearchFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?description=fts(english).programmer&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func textSearchFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -152,25 +70,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testMultipleFilters() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?age=gte.18&select=*&status=eq.active"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func multipleFilters() async throws {
     _ =
       try await sut
       .from("users")
@@ -180,25 +81,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testLikeFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?email=like.%25@example.com&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func likeFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -207,25 +91,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testILikeFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?email=ilike.%25@EXAMPLE.COM&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func iLikeFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -234,25 +101,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testIsFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?deleted_at=is.NULL&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func isFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -261,25 +111,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testInFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?select=*&status=in.(active,pending)"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func inFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -288,25 +121,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testInFilterQuotesValuesWithReservedCharacters() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?select=*&tags=in.(%22a,b%22,%22c(d)%22,plain)"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func inFilterQuotesValuesWithReservedCharacters() async throws {
     _ =
       try await sut
       .from("users")
@@ -315,25 +131,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testContainedByFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?roles=cd.%7Badmin,user%7D&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func containedByFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -342,25 +141,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testRangeFilters() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?age_range=sl.%5B18,25)&fifth_range=adj.%5B55,65)&fourth_range=nxr.%5B45,55)&other_range=sr.%5B25,35)&select=*&third_range=nxl.%5B35,45)"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func rangeFilters() async throws {
     _ =
       try await sut
       .from("users")
@@ -373,25 +155,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testOverlapsFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?schedule=ov.%7B9:00,17:00%7D&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func overlapsFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -400,25 +165,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testMatchFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?role=eq.admin&select=*&status=eq.active"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func matchFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -427,25 +175,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testFilterEscapeHatch() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?created_at=gt.2023-01-01&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func filterEscapeHatch() async throws {
     _ =
       try await sut
       .from("users")
@@ -454,25 +185,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testNeqFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?select=*&status=neq.inactive"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func neqFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -481,25 +195,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testGtFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?age=gt.21&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func gtFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -508,25 +205,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testLtFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?age=lt.65&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func ltFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -535,25 +215,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testLteFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?age=lte.65&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func lteFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -562,25 +225,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testLikeAllOfFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?name=like(all).%7B%25test%25,%25user%25%7D&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func likeAllOfFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -589,25 +235,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testLikeAnyOfFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?name=like(any).%7B%25test%25,%25user%25%7D&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func likeAnyOfFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -616,25 +245,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testILikeAllOfFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?name=ilike(all).%7B%25TEST%25,%25USER%25%7D&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func iLikeAllOfFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -643,25 +255,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testILikeAnyOfFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?name=ilike(any).%7B%25TEST%25,%25USER%25%7D&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func iLikeAnyOfFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -670,25 +265,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testFtsFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?description=fts.programmer&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func ftsFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -697,25 +275,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testRegexMatchFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?email=match.%5E.+@.+%5C..+$&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func regexMatchFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -724,25 +285,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testRegexImatchFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?name=imatch.%5Ejohn&select=*"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func regexImatchFilter() async throws {
     _ =
       try await sut
       .from("users")
@@ -751,25 +295,8 @@ final class PostgrestFilterBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testIsDistinctFilter() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [.get: Data("[]".utf8)]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?select=*&status=isdistinct.null"
-      """#
-    }
-    .register()
-
+  @Test(.replay(stubs: usersStub, matching: [.method, .path], scope: .test))
+  func isDistinctFilter() async throws {
     _ =
       try await sut
       .from("users")

@@ -5,37 +5,23 @@
 //  Created by Guilherme Souza on 21/01/25.
 //
 
-import Mocker
+import Foundation
 import PostgREST
-import XCTest
+import Replay
+import Testing
 
-final class PostgrestTransformBuilderTests: PostgrestQueryTests {
+@Suite
+struct PostgrestTransformBuilderTests {
+  let fixture = PostgrestQueryFixture()
+  var url: URL { fixture.url }
+  var sut: PostgrestClient { fixture.sut }
 
-  func testSelect() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 201,
-      data: [
-        .post: Data(#"{"username":"admin""#.utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Accept: application/json" \
-      	--header "Content-Length: 27" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: return=representation" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"id\":1,\"username\":\"admin\"}" \
-      	"http://localhost:54321/rest/v1/users?select=username,%22first%20name%22"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .post("http://localhost:54321/rest/v1/users", 201, [:]) { #"{"username":"admin""# }
+      ], matching: [.method, .path], scope: .test))
+  func select() async throws {
     try await sut
       .from("users")
       .insert(User(id: 1, username: "admin"), returning: .minimal)
@@ -43,46 +29,35 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testOrder() async throws {
-    Mock(
-      url: url.appendingPathComponent("cities"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data(
-          """
-            [
-                {
-                  "name": "United States",
-                  "cities": [
-                    {
-                      "name": "New York City"
-                    },
-                    {
-                      "name": "Atlanta"
-                    }
-                  ]
-                },
-                {
-                  "name": "Vanuatu",
-                  "cities": []
-                }
-              ]
-          """.utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/cities?countries.order=name.asc.nullslast&select=name,country:countries(name)"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get(
+          "http://localhost:54321/rest/v1/cities", 200,
+          [:],
+          {
+            """
+              [
+                  {
+                    "name": "United States",
+                    "cities": [
+                      {
+                        "name": "New York City"
+                      },
+                      {
+                        "name": "Atlanta"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Vanuatu",
+                    "cities": []
+                  }
+                ]
+            """
+          })
+      ], matching: [.method, .path], scope: .test))
+  func order() async throws {
     let countries =
       try await sut
       .from("cities")
@@ -98,31 +73,16 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
       .value as [Country]
 
-    XCTAssertEqual(countries[0].name, "United States")
-    XCTAssertEqual(countries[0].cities[0].name, "New York City")
+    #expect(countries[0].name == "United States")
+    #expect(countries[0].cities[0].name == "New York City")
   }
 
-  func testMultipleOrder() async throws {
-    Mock(
-      url: url.appendingPathComponent("cities"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data("[]".utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/cities?order=num_of_habitants.asc.nullslast,name.desc.nullsfirst&select=name,num_of_habitants"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get("http://localhost:54321/rest/v1/cities", 200, [:]) { "[]" }
+      ], matching: [.method, .path], scope: .test))
+  func multipleOrder() async throws {
     try await sut
       .from("cities")
       .select("name,num_of_habitants")
@@ -131,39 +91,28 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testLimit() async throws {
-    Mock(
-      url: url.appendingPathComponent("countries"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data(
-          """
-          [
-            {
-              "name": "United States",
-              "cities": [
-                {
-                  "name": "Atlanta"
-                }
-              ]
-            }
-          ]
-          """.utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/countries?cities.limit=1&select=name,cities(name)"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get(
+          "http://localhost:54321/rest/v1/countries", 200,
+          [:],
+          {
+            """
+            [
+              {
+                "name": "United States",
+                "cities": [
+                  {
+                    "name": "Atlanta"
+                  }
+                ]
+              }
+            ]
+            """
+          })
+      ], matching: [.method, .path], scope: .test))
+  func limit() async throws {
     let countries =
       try await sut
       .from("countries")
@@ -179,42 +128,31 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
       .value as [Country]
 
-    XCTAssertEqual(countries[0].name, "United States")
+    #expect(countries[0].name == "United States")
   }
 
-  func testRange() async throws {
-    Mock(
-      url: url.appendingPathComponent("countries"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data(
-          """
-          [
-            {
-              "name": "United States",
-              "cities": [
-                {
-                  "name": "Atlanta"
-                }
-              ]
-            }
-          ]
-          """.utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/countries?limit=2&offset=0&select=name,cities(name)"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get(
+          "http://localhost:54321/rest/v1/countries", 200,
+          [:],
+          {
+            """
+            [
+              {
+                "name": "United States",
+                "cities": [
+                  {
+                    "name": "Atlanta"
+                  }
+                ]
+              }
+            ]
+            """
+          })
+      ], matching: [.method, .path], scope: .test))
+  func range() async throws {
     let countries =
       try await sut
       .from("countries")
@@ -230,30 +168,15 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
       .value as [Country]
 
-    XCTAssertEqual(countries[0].name, "United States")
+    #expect(countries[0].name == "United States")
   }
 
-  func testRangeWithReferencedTable() async throws {
-    Mock(
-      url: url.appendingPathComponent("countries"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data("[]".utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/countries?cities.limit=2&cities.offset=0&select=name,cities(name)"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get("http://localhost:54321/rest/v1/countries", 200, [:]) { "[]" }
+      ], matching: [.method, .path], scope: .test))
+  func rangeWithReferencedTable() async throws {
     try await sut
       .from("countries")
       .select(
@@ -268,32 +191,21 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testSingle() async throws {
-    Mock(
-      url: url.appendingPathComponent("countries"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data(
-          """
+  @Test(
+    .replay(
+      stubs: [
+        .get(
+          "http://localhost:54321/rest/v1/countries", 200,
+          [:],
           {
-            "name": "United States"
-          }
-          """.utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/vnd.pgrst.object+json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/countries?limit=1&select=name"
-      """#
-    }
-    .register()
-
+            """
+            {
+              "name": "United States"
+            }
+            """
+          })
+      ], matching: [.method, .path], scope: .test))
+  func single() async throws {
     let country =
       try await sut
       .from("countries")
@@ -303,30 +215,17 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
       .value as [String: String]
 
-    XCTAssertEqual(country["name"], "United States")
+    #expect(country["name"] == "United States")
   }
 
-  func testCSV() async throws {
-    Mock(
-      url: url.appendingPathComponent("countries"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data("id,name\n1,Afghanistan\n2,Albania\n3,Algeria".utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: text/csv" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/countries?select=*"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get("http://localhost:54321/rest/v1/countries", 200, [:]) {
+          "id,name\n1,Afghanistan\n2,Albania\n3,Algeria"
+        }
+      ], matching: [.method, .path], scope: .test))
+  func csv() async throws {
     let csv =
       try await sut
       .from("countries")
@@ -341,30 +240,15 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .dropFirst()
       .map { $0.split(separator: ",").first! } ?? []
 
-    XCTAssertEqual(ids, ["1", "2", "3"])
+    #expect(ids == ["1", "2", "3"])
   }
 
-  func testGeoJSON() async throws {
-    Mock(
-      url: url.appendingPathComponent("countries"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data("[]".utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/geo+json" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/countries?select=area"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get("http://localhost:54321/rest/v1/countries", 200, [:]) { "[]" }
+      ], matching: [.method, .path], scope: .test))
+  func geoJSON() async throws {
     try await sut
       .from("countries")
       .select("area")
@@ -372,13 +256,10 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testExplain() async throws {
-    Mock(
-      url: url.appendingPathComponent("countries"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data(
+  @Test(
+    .replay(
+      stubs: [
+        .get("http://localhost:54321/rest/v1/countries", 200, [:]) {
           """
           Aggregate  (cost=33.34..33.36 rows=1 width=112) (actual time=0.041..0.041 rows=1 loops=1)
             Output: NULL::bigint, count(ROW(countries.id, countries.name)), COALESCE(json_agg(ROW(countries.id, countries.name)), '[]'::json), NULLIF(current_setting('response.headers'::text, true), ''::text), NULLIF(current_setting('response.status'::text, true), ''::text)
@@ -389,22 +270,10 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
           Query Identifier: -4730654291623321173
           Planning Time: 0.407 ms
           Execution Time: 0.119 ms
-          """.utf8
-        )
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/vnd.pgrst.plan+text; for=\"application/json\"; options=analyze|verbose;" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/countries?select=*"
-      """#
-    }
-    .register()
-
+          """
+        }
+      ], matching: [.method, .path], scope: .test))
+  func explain() async throws {
     let explain =
       try await sut
       .from("countries")
@@ -413,30 +282,15 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
       .string() ?? ""
 
-    XCTAssertTrue(explain.contains("Aggregate"))
+    #expect(explain.contains("Aggregate"))
   }
 
-  func testExplainWithJSONFormat() async throws {
-    Mock(
-      url: url.appendingPathComponent("countries"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data("[]".utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/vnd.pgrst.plan+json; for=\"application/json\"; options=analyze;" \
-      	--header "Content-Type: application/json" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/countries?select=*"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get("http://localhost:54321/rest/v1/countries", 200, [:]) { "[]" }
+      ], matching: [.method, .path], scope: .test))
+  func explainWithJSONFormat() async throws {
     _ =
       try await sut
       .from("countries")
@@ -445,31 +299,12 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testMaxAffectedOnUpdate() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .patch: Data("[]".utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request PATCH \
-      	--header "Accept: application/json" \
-      	--header "Content-Length: 20" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: return=representation,handling=strict,max-affected=1" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"username\":\"admin\"}" \
-      	"http://localhost:54321/rest/v1/users?id=eq.1"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .patch("http://localhost:54321/rest/v1/users", 200, [:]) { "[]" }
+      ], matching: [.method, .path], scope: .test))
+  func maxAffectedOnUpdate() async throws {
     try await sut
       .from("users")
       .update(["username": "admin"])
@@ -478,31 +313,12 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testMaxAffectedTwice() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .patch: Data("[]".utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request PATCH \
-      	--header "Accept: application/json" \
-      	--header "Content-Length: 20" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: return=representation,handling=strict,max-affected=5" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	--data "{\"username\":\"admin\"}" \
-      	"http://localhost:54321/rest/v1/users?id=eq.1"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .patch("http://localhost:54321/rest/v1/users", 200, [:]) { "[]" }
+      ], matching: [.method, .path], scope: .test))
+  func maxAffectedTwice() async throws {
     try await sut
       .from("users")
       .update(["username": "admin"])
@@ -512,29 +328,12 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testMaxAffectedOnDelete() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .delete: Data("[]".utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request DELETE \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: return=representation,handling=strict,max-affected=5" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?id=in.(1,2,3,4,5)"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .delete("http://localhost:54321/rest/v1/users", 200, [:]) { "[]" }
+      ], matching: [.method, .path], scope: .test))
+  func maxAffectedOnDelete() async throws {
     try await sut
       .from("users")
       .delete()
@@ -543,57 +342,24 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testMaxAffectedOnRpc() async throws {
-    Mock(
-      url: url.appendingPathComponent("rpc/delete_users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .post: Data("[]".utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--request POST \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: handling=strict,max-affected=10" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/rpc/delete_users"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .post("http://localhost:54321/rest/v1/rpc/delete_users", 200, [:]) { "[]" }
+      ], matching: [.method, .path], scope: .test))
+  func maxAffectedOnRpc() async throws {
     try await sut
       .rpc("delete_users")
       .maxAffected(10)
       .execute()
   }
 
-  func testMaxAffectedOnSelect() async throws {
-    Mock(
-      url: url.appendingPathComponent("users"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data("[]".utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: handling=strict,max-affected=3" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/users?select=*"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get("http://localhost:54321/rest/v1/users", 200, [:]) { "[]" }
+      ], matching: [.method, .path], scope: .test))
+  func maxAffectedOnSelect() async throws {
     try await sut
       .from("users")
       .select()
@@ -601,28 +367,12 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testStripNulls() async throws {
-    Mock(
-      url: url.appendingPathComponent("countries"),
-      ignoreQuery: true,
-      statusCode: 200,
-      data: [
-        .get: Data("[]".utf8)
-      ]
-    )
-    .snapshotRequest {
-      #"""
-      curl \
-      	--header "Accept: application/json" \
-      	--header "Content-Type: application/json" \
-      	--header "Prefer: return=stripped-nulls" \
-      	--header "X-Client-Info: postgrest-swift/0.0.0" \
-      	--header "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" \
-      	"http://localhost:54321/rest/v1/countries?select=*"
-      """#
-    }
-    .register()
-
+  @Test(
+    .replay(
+      stubs: [
+        .get("http://localhost:54321/rest/v1/countries", 200, [:]) { "[]" }
+      ], matching: [.method, .path], scope: .test))
+  func stripNulls() async throws {
     try await sut
       .from("countries")
       .select()
@@ -630,7 +380,8 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
       .execute()
   }
 
-  func testStripNullsWithCSVThrowsError() async throws {
+  @Test
+  func stripNullsWithCSVThrowsError() async throws {
     do {
       try await sut
         .from("countries")
@@ -638,13 +389,14 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
         .csv()
         .stripNulls()
         .execute()
-      XCTFail("Expected error to be thrown")
+      Issue.record("Expected error to be thrown")
     } catch let error as PostgrestError {
-      XCTAssertEqual(error.message, "`.stripNulls()` cannot be combined with `.csv()`")
+      #expect(error.message == "`.stripNulls()` cannot be combined with `.csv()`")
     }
   }
 
-  func testCSVWithStripNullsThrowsError() async throws {
+  @Test
+  func csvWithStripNullsThrowsError() async throws {
     do {
       try await sut
         .from("countries")
@@ -652,9 +404,9 @@ final class PostgrestTransformBuilderTests: PostgrestQueryTests {
         .stripNulls()
         .csv()
         .execute()
-      XCTFail("Expected error to be thrown")
+      Issue.record("Expected error to be thrown")
     } catch let error as PostgrestError {
-      XCTAssertEqual(error.message, "`.csv()` cannot be combined with `.stripNulls()`")
+      #expect(error.message == "`.csv()` cannot be combined with `.stripNulls()`")
     }
   }
 }
