@@ -1,5 +1,5 @@
 {
-  "originHash" : "1c272ebb3b442977b53fe12687622c82a34044334e6462c48058615361222f7f",
+  "originHash" : "9440075a936747d6921fff0baaddce6711443133538e2cabfdd9f26744979df7",
   "pins" : [
     {
       "identity" : "mocker",
@@ -13,7 +13,7 @@
     {
       "identity" : "replay",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mattt/Replay",
+      "location" : "https://github.com/mattt/Replay.git",
       "state" : {
         "revision" : "f641f9c06a4a01c73342aa0879a860591b608418",
         "version" : "0.4.0"
