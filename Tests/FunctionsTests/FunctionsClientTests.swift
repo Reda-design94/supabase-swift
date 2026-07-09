@@ -58,7 +58,7 @@ struct FunctionsClientTests {
     .replay(
       stubs: [
         Stub(.post, URL(string: "http://localhost:5432/functions/v1/hello_world")!, body: "")
-      ], scope: .test))
+      ]))
   func invoke() async throws {
     let sut = makeSUT()
 
@@ -74,7 +74,7 @@ struct FunctionsClientTests {
         Stub(
           .post, URL(string: "http://localhost:5432/functions/v1/hello")!,
           body: #"{"message":"Hello, world!","status":"ok"}"#)
-      ], scope: .test))
+      ]))
   func invokeReturningDecodable() async throws {
     let sut = makeSUT()
 
@@ -92,7 +92,7 @@ struct FunctionsClientTests {
     .replay(
       stubs: [
         Stub(.delete, URL(string: "http://localhost:5432/functions/v1/hello-world")!, body: "")
-      ], scope: .test))
+      ]))
   func invokeWithCustomMethod() async throws {
     let sut = makeSUT()
 
@@ -104,8 +104,7 @@ struct FunctionsClientTests {
       stubs: [
         Stub(.post, URL(string: "http://localhost:5432/functions/v1/hello-world")!, body: "")
       ],
-      matching: [.method, .path],
-      scope: .test
+      matching: [.method, .path]
     ))
   func invokeWithQuery() async throws {
     let sut = makeSUT()
@@ -123,8 +122,7 @@ struct FunctionsClientTests {
       stubs: [
         Stub(.post, URL(string: "http://localhost:5432/functions/v1/hello-world")!, body: "")
       ],
-      matching: [.method, .path],
-      scope: .test
+      matching: [.method, .path]
     ))
   func invokeWithRegionDefinedInClient() async throws {
     let sut = makeSUT(region: FunctionRegion.caCentral1.rawValue)
@@ -137,8 +135,7 @@ struct FunctionsClientTests {
       stubs: [
         Stub(.post, URL(string: "http://localhost:5432/functions/v1/hello-world")!, body: "")
       ],
-      matching: [.method, .path],
-      scope: .test
+      matching: [.method, .path]
     ))
   func invokeWithRegion() async throws {
     let sut = makeSUT()
@@ -150,7 +147,7 @@ struct FunctionsClientTests {
     .replay(
       stubs: [
         Stub(.post, URL(string: "http://localhost:5432/functions/v1/hello-world")!, body: "")
-      ], scope: .test))
+      ]))
   func invokeWithoutRegion() async throws {
     let sut = makeSUT(region: nil)
 
@@ -181,7 +178,7 @@ struct FunctionsClientTests {
         Stub(
           .post, URL(string: "http://localhost:5432/functions/v1/hello_world")!, status: 300,
           body: "")
-      ], scope: .test))
+      ]))
   func invoke_shouldThrow_FunctionsError_httpError() async {
     let sut = makeSUT()
 
@@ -201,7 +198,7 @@ struct FunctionsClientTests {
         Stub(
           .post, URL(string: "http://localhost:5432/functions/v1/hello_world")!,
           headers: ["x-relay-error": "true"], body: "")
-      ], scope: .test))
+      ]))
   func invoke_shouldThrow_FunctionsError_relayError() async {
     let sut = makeSUT()
 
