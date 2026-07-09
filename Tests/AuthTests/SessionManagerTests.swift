@@ -14,7 +14,12 @@ import Testing
 
 @testable import Auth
 
-@Suite
+// `withMainSerialExecutor` mutates a process-global flag (ConcurrencyExtras'
+// `uncheckedUseMainSerialExecutor`) to force deterministic task scheduling within its closure.
+// Swift Testing runs tests in the same suite concurrently by default, so two tests racing to
+// flip that global would interfere with each other — serialize this suite, mirroring the
+// `_clock`-swap precedent in PostgrestBuilderTests (PR #1095).
+@Suite(.serialized)
 struct SessionManagerTests {
   let http = HTTPClientMock()
   let clientID = AuthClientID()

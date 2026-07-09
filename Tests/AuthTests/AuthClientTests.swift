@@ -23,7 +23,12 @@ import Testing
   import AuthenticationServices
 #endif
 
-@Suite
+// `withMainSerialExecutor` mutates a process-global flag (ConcurrencyExtras'
+// `uncheckedUseMainSerialExecutor`) to force deterministic task scheduling within its closure.
+// Swift Testing runs tests in the same suite concurrently by default, so two tests racing to
+// flip that global would interfere with each other — serialize this suite, mirroring the
+// `_clock`-swap precedent in PostgrestBuilderTests (PR #1095).
+@Suite(.serialized)
 struct AuthClientTests {
   let storage = InMemoryLocalStorage()
 
@@ -210,7 +215,7 @@ struct AuthClientTests {
       stubs: [
         Stub(.post, "http://localhost:54321/auth/v1/signup", body: MockData.anonymousSignInResponse)
       ],
-      matching: [.method, .url, matchingBody("{}")],
+      matching: [.method, .path, .query, matchingBody("{}")],
       scope: .test))
   func signInAnonymously() async throws {
     try await withMainSerialExecutor {
@@ -236,7 +241,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/token?grant_type=pkce", body: MockData.session)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"auth_code":"12345","code_verifier":"nt_xCJhJXUsIlTmbE_b0r3VHDKLxFTAwXYSj1xF3ZPaulO2gejNornLLiW_C3Ru4w-5lqIh1XE2LTOsSKrj7iA"}"#
         ),
@@ -277,7 +282,7 @@ struct AuthClientTests {
               "url": "https://github.com/login/oauth/authorize?client_id=1234&redirect_to=com.supabase.swift-examples://&redirect_uri=http://127.0.0.1:54321/auth/v1/callback&response_type=code&scope=user:email&skip_http_redirect=true&state=jwt"
             }
             """.utf8))
-      ], scope: .test))
+      ], matching: [.method, .path, .query], scope: .test))
   func getLinkIdentityURL() async throws {
     try await withMainSerialExecutor {
       let url =
@@ -312,7 +317,7 @@ struct AuthClientTests {
               "url": "https://github.com/login/oauth/authorize?client_id=1234&redirect_to=com.supabase.swift-examples://&redirect_uri=http://127.0.0.1:54321/auth/v1/callback&response_type=code&scope=user:email&skip_http_redirect=true&state=jwt"
             }
             """.utf8))
-      ], scope: .test))
+      ], matching: [.method, .path, .query], scope: .test))
   func linkIdentity() async throws {
     try await withMainSerialExecutor {
       let url =
@@ -339,7 +344,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/token?grant_type=id_token", body: MockData.session)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"access_token":"access-token","gotrue_meta_security":{"captcha_token":"captcha-token"},"id_token":"id-token","link_identity":true,"nonce":"nonce","provider":"apple"}"#
         ),
@@ -448,7 +453,7 @@ struct AuthClientTests {
           body: MockData.session)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"code_challenge":"hgJeigklONUI1pKSS98MIAbtJGaNu0zJU1iSiFOn2lY","code_challenge_method":"s256","data":{"custom_key":"custom_value"},"email":"example@mail.com","gotrue_meta_security":{"captcha_token":"dummy-captcha"},"password":"the.pass"}"#
         ),
@@ -472,7 +477,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/signup", body: MockData.session)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"channel":"sms","data":{"custom_key":"custom_value"},"gotrue_meta_security":{"captcha_token":"dummy-captcha"},"password":"the.pass","phone":"+1 202-918-2132"}"#
         ),
@@ -496,7 +501,7 @@ struct AuthClientTests {
           .post, "http://localhost:54321/auth/v1/token?grant_type=password", body: MockData.session)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"email":"example@mail.com","gotrue_meta_security":{"captcha_token":"dummy-captcha"},"password":"the.pass"}"#
         ),
@@ -519,7 +524,7 @@ struct AuthClientTests {
           .post, "http://localhost:54321/auth/v1/token?grant_type=password", body: MockData.session)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"gotrue_meta_security":{"captcha_token":"dummy-captcha"},"password":"the.pass","phone":"+1 202-918-2132"}"#
         ),
@@ -542,7 +547,7 @@ struct AuthClientTests {
           .post, "http://localhost:54321/auth/v1/token?grant_type=id_token", body: MockData.session)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"access_token":"access-token","gotrue_meta_security":{"captcha_token":"captcha-token"},"id_token":"id-token","link_identity":false,"nonce":"nonce","provider":"apple"}"#
         ),
@@ -570,7 +575,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/otp?redirect_to=https://supabase.com", body: Data())
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"code_challenge":"hgJeigklONUI1pKSS98MIAbtJGaNu0zJU1iSiFOn2lY","code_challenge_method":"s256","create_user":true,"data":{"custom_key":"custom_value"},"email":"example@mail.com","gotrue_meta_security":{"captcha_token":"dummy-captcha"}}"#
         ),
@@ -594,7 +599,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/otp", body: Data())
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"channel":"sms","create_user":true,"data":{"custom_key":"custom_value"},"gotrue_meta_security":{"captcha_token":"dummy-captcha"},"phone":"+1 202-918-2132"}"#
         ),
@@ -636,7 +641,7 @@ struct AuthClientTests {
           .post, "http://localhost:54321/auth/v1/token?grant_type=refresh_token",
           body: MockData.session)
       ],
-      matching: [.method, .url, matchingBody(#"{"refresh_token":"refresh-token"}"#)],
+      matching: [.method, .path, .query, matchingBody(#"{"refresh_token":"refresh-token"}"#)],
       scope: .test))
   func refreshSession() async throws {
     let sut = makeSUT()
@@ -874,7 +879,7 @@ struct AuthClientTests {
           .post, "http://localhost:54321/auth/v1/token?grant_type=refresh_token",
           body: MockData.session)
       ],
-      matching: [.method, .url, matchingBody(#"{"refresh_token":"dummy-refresh-token"}"#)],
+      matching: [.method, .path, .query, matchingBody(#"{"refresh_token":"dummy-refresh-token"}"#)],
       scope: .test))
   func setSessionWithAExpiredToken() async throws {
     let sut = makeSUT()
@@ -893,7 +898,7 @@ struct AuthClientTests {
           body: MockData.session)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"email":"example@mail.com","gotrue_meta_security":{"captcha_token":"captcha-token"},"token":"123456","type":"magiclink"}"#
         ),
@@ -917,7 +922,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/verify", body: MockData.session)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"gotrue_meta_security":{"captcha_token":"captcha-token"},"phone":"+1 202-918-2132","token":"123456","type":"sms"}"#
         ),
@@ -939,7 +944,7 @@ struct AuthClientTests {
       stubs: [
         Stub(.post, "http://localhost:54321/auth/v1/verify", body: MockData.session)
       ],
-      matching: [.method, .url, matchingBody(#"{"token_hash":"abc-def","type":"email"}"#)],
+      matching: [.method, .path, .query, matchingBody(#"{"token_hash":"abc-def","type":"email"}"#)],
       scope: .test))
   func verifyOTPUsingTokenHash() async throws {
     let sut = makeSUT()
@@ -956,7 +961,7 @@ struct AuthClientTests {
         Stub(.put, "http://localhost:54321/auth/v1/user", body: MockData.user)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"code_challenge":"hgJeigklONUI1pKSS98MIAbtJGaNu0zJU1iSiFOn2lY","code_challenge_method":"s256","data":{"custom_key":"custom_value"},"email":"example@mail.com","email_change_token":"123456","nonce":"abcdef","password":"another.pass","phone":"+1 202-918-2132"}"#
         ),
@@ -985,7 +990,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/recover?redirect_to=https://supabase.com", body: Data())
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"code_challenge":"hgJeigklONUI1pKSS98MIAbtJGaNu0zJU1iSiFOn2lY","code_challenge_method":"s256","email":"example@mail.com","gotrue_meta_security":{"captcha_token":"captcha-token"}}"#
         ),
@@ -1006,7 +1011,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/resend?redirect_to=https://supabase.com", body: Data())
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"code_challenge":"hgJeigklONUI1pKSS98MIAbtJGaNu0zJU1iSiFOn2lY","code_challenge_method":"s256","email":"example@mail.com","gotrue_meta_security":{"captcha_token":"captcha-token"},"type":"email_change"}"#
         ),
@@ -1029,7 +1034,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/resend?redirect_to=https://supabase.com", body: Data())
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"email":"example@mail.com","gotrue_meta_security":{"captcha_token":"captcha-token"},"type":"email_change"}"#
         ),
@@ -1052,7 +1057,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/resend", body: Data(#"{"message_id": "12345"}"#.utf8))
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"gotrue_meta_security":{"captcha_token":"captcha-token"},"phone":"+1 202-918-2132","type":"phone_change"}"#
         ),
@@ -1077,7 +1082,7 @@ struct AuthClientTests {
           .delete, "http://localhost:54321/auth/v1/admin/users/E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
           status: 204, body: Data())
       ],
-      matching: [.method, .url, matchingBody(#"{"should_soft_delete":false}"#)],
+      matching: [.method, .path, .query, matchingBody(#"{"should_soft_delete":false}"#)],
       scope: .test))
   func deleteUser() async throws {
     let id = UUID(uuidString: "E621E1F8-C36C-495A-93FC-0C247A3E6E5F")!
@@ -1133,7 +1138,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/sso", body: Data(#"{"url":"https://supabase.com"}"#.utf8))
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"code_challenge":"hgJeigklONUI1pKSS98MIAbtJGaNu0zJU1iSiFOn2lY","code_challenge_method":"s256","domain":"supabase.com","gotrue_meta_security":{"captcha_token":"captcha-token"},"redirect_to":"https://supabase.com"}"#
         ),
@@ -1157,7 +1162,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/sso", body: Data(#"{"url":"https://supabase.com"}"#.utf8))
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"code_challenge":"hgJeigklONUI1pKSS98MIAbtJGaNu0zJU1iSiFOn2lY","code_challenge_method":"s256","gotrue_meta_security":{"captcha_token":"captcha-token"},"provider_id":"E621E1F8-C36C-495A-93FC-0C247A3E6E5F","redirect_to":"https://supabase.com"}"#
         ),
@@ -1189,7 +1194,7 @@ struct AuthClientTests {
             """.utf8))
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(#"{"factor_type":"totp","friendly_name":"test","issuer":"supabase.com"}"#),
       ],
       scope: .test))
@@ -1223,7 +1228,7 @@ struct AuthClientTests {
             """.utf8))
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(#"{"factor_type":"totp","friendly_name":"test","issuer":"supabase.com"}"#),
       ],
       scope: .test))
@@ -1257,7 +1262,7 @@ struct AuthClientTests {
             """.utf8))
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(#"{"factor_type":"phone","friendly_name":"test","phone":"+1 202-918-2132"}"#),
       ],
       scope: .test))
@@ -1290,7 +1295,7 @@ struct AuthClientTests {
               "expires_at": 12345678
             }
             """.utf8))
-      ], scope: .test))
+      ], matching: [.method, .path, .query], scope: .test))
   func mfaChallenge() async throws {
     let factorId = "123"
 
@@ -1324,7 +1329,7 @@ struct AuthClientTests {
             }
             """.utf8))
       ],
-      matching: [.method, .url, matchingBody(#"{"channel":"sms"}"#)],
+      matching: [.method, .path, .query, matchingBody(#"{"channel":"sms"}"#)],
       scope: .test))
   func mfaChallengeWithPhoneType() async throws {
     let factorId = "123"
@@ -1371,7 +1376,7 @@ struct AuthClientTests {
               }
             }
             """.utf8))
-      ], scope: .test))
+      ], matching: [.method, .path, .query], scope: .test))
   func mfaChallengeWebAuthnReturnsCredentialOptions() async throws {
     let factorId = "123"
 
@@ -1399,7 +1404,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/factors/123/verify", body: MockData.session)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(#"{"challenge_id":"123","code":"123456","factor_id":"123"}"#),
       ],
       scope: .test))
@@ -1450,7 +1455,7 @@ struct AuthClientTests {
             """.utf8)),
         Stub(.post, "http://localhost:54321/auth/v1/factors/123/verify", body: MockData.session),
       ],
-      matching: [.method, .url],
+      matching: [.method, .path, .query],
       scope: .test))
   func mfaChallengeAndVerify() async throws {
     let factorId = "123"
@@ -1572,7 +1577,7 @@ struct AuthClientTests {
               }
             }
             """.utf8))
-      ], scope: .test))
+      ], matching: [.method, .path, .query], scope: .test))
   func getPasskeyRegistrationOptionsDecodesOptions() async throws {
     let sut = makeSUT()
     Dependencies[sut.clientID].sessionStorage.store(.validSession)
@@ -1607,7 +1612,7 @@ struct AuthClientTests {
               }
             ]
             """.utf8))
-      ], scope: .test))
+      ], matching: [.method, .path, .query], scope: .test))
   func listPasskeysReturnsItems() async throws {
     let sut = makeSUT()
     Dependencies[sut.clientID].sessionStorage.store(.validSession)
@@ -1692,7 +1697,7 @@ struct AuthClientTests {
             .post, "http://localhost:54321/auth/v1/passkeys/authentication/verify",
             body: MockData.session),
         ],
-        matching: [.method, .url],
+        matching: [.method, .path, .query],
         scope: .test))
     @MainActor
     func signInWithPasskeyDrivesFullFlow() async throws {
@@ -1737,7 +1742,7 @@ struct AuthClientTests {
               #"{"id":"p1","friendly_name":"My Passkey","created_at":"2024-01-15T10:00:00.000Z","last_used_at":null}"#
                 .utf8)),
         ],
-        matching: [.method, .url],
+        matching: [.method, .path, .query],
         scope: .test))
     @MainActor
     func registerPasskeyDrivesFullFlow() async throws {
@@ -1777,7 +1782,7 @@ struct AuthClientTests {
           Stub(
             .post, "http://localhost:54321/auth/v1/factors/factor-1/verify", body: MockData.session),
         ],
-        matching: [.method, .url],
+        matching: [.method, .path, .query],
         scope: .test))
     @MainActor
     func enrollWebAuthnFactorDrivesFullFlow() async throws {
@@ -1814,7 +1819,7 @@ struct AuthClientTests {
           Stub(
             .post, "http://localhost:54321/auth/v1/factors/factor-1/verify", body: MockData.session),
         ],
-        matching: [.method, .url],
+        matching: [.method, .path, .query],
         scope: .test))
     @MainActor
     func verifyWebAuthnFactorDrivesFullFlow() async throws {
@@ -1915,7 +1920,7 @@ struct AuthClientTests {
           body: MockData.user)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(#"{"phone":"1234567890","user_metadata":{"full_name":"John Doe"}}"#),
       ],
       scope: .test))
@@ -1941,7 +1946,7 @@ struct AuthClientTests {
         Stub(.post, "http://localhost:54321/auth/v1/admin/users", body: MockData.user)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(
           #"{"email":"test@example.com","password":"password","password_hash":"password","phone":"1234567890"}"#
         ),
@@ -2009,7 +2014,7 @@ struct AuthClientTests {
           body: MockData.user)
       ],
       matching: [
-        .method, .url,
+        .method, .path, .query,
         matchingBody(#"{"data":{"full_name":"John Doe"},"email":"test@example.com"}"#),
       ],
       scope: .test))
@@ -2035,7 +2040,7 @@ struct AuthClientTests {
               "message": "Session not found"
             }
             """.utf8))
-      ], scope: .test))
+      ], matching: [.method, .path, .query], scope: .test))
   func removeSessionAndSignoutIfSessionNotFoundErrorReturned() async throws {
     let sut = makeSUT()
 
@@ -2069,7 +2074,7 @@ struct AuthClientTests {
               "message": "Invalid Refresh Token: Refresh Token Not Found"
             }
             """.utf8))
-      ], scope: .test))
+      ], matching: [.method, .path, .query], scope: .test))
   func removeSessionAndSignoutIfRefreshTokenNotFoundErrorReturned() async throws {
     let sut = makeSUT()
 
@@ -2105,7 +2110,7 @@ struct AuthClientTests {
               "message": "Invalid Refresh Token: Refresh Token Not Found"
             }
             """.utf8))
-      ], scope: .test))
+      ], matching: [.method, .path, .query], scope: .test))
   func
     removeSessionAndSignoutIfRefreshTokenNotFoundErrorReturned_withEmitLocalSessionAsInitialSession()
     async throws
